@@ -1016,3 +1016,126 @@
   height: 100%;
 }
 
+/* Crisp Pro Amber Button in Header */
+.crisp-visual-btn-pro {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.28)) !important;
+  color: #f59e0b !important;
+  border: 1px solid rgba(245, 158, 11, 0.45) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.15);
+}
+
+.crisp-visual-btn-pro:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(217, 119, 6, 0.45)) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(245, 158, 11, 0.65) !important;
+  transform: translateY(-0.5px);
+}
+
+/* Crisp Pro Banner in Masonry */
+.crisp-visual-pro-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  margin: 20px 0 12px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(var(--background-secondary-rgb, 30, 30, 30), 0.65));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.crisp-visual-pro-banner-icon {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.crisp-visual-pro-banner-content {
+  flex: 1;
+}
+
+.crisp-visual-pro-banner-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin-bottom: 3px;
+}
+
+.crisp-visual-pro-banner-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Crisp Visual Activation Modal */
+.crisp-visual-activation-modal {
+  padding: 8px 4px;
+}
+
+.crisp-visual-modal-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  margin: 0 0 8px;
+}
+
+.crisp-visual-modal-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.crisp-visual-modal-input-wrap {
+  margin-bottom: 16px;
+}
+
+.crisp-visual-modal-input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.crisp-visual-modal-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.crisp-visual-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.crisp-visual-modal-footer {
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.crisp-visual-modal-footer a {
+  color: var(--interactive-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.crisp-visual-modal-footer a:hover {
+  text-decoration: underline;
+}
+
+

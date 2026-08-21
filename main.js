@@ -1,4 +1,4 @@
-const { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, Setting, Menu, addIcon, requestUrl } = require('obsidian');
+const { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, Setting, Menu, Modal, addIcon, requestUrl } = require('obsidian');
 const fs = require('fs');
 const path = require('path');
 const { execFile, exec } = require('child_process');
@@ -209,6 +209,65 @@ class CrispVisualLicenseManager {
       await this.plugin.saveSettings();
     }
     return result;
+  }
+}
+
+class CrispVisualActivationModal extends Modal {
+  constructor(app, plugin, onActivated) {
+    super(app);
+    this.plugin = plugin;
+    this.onActivated = onActivated;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('crisp-visual-activation-modal');
+
+    contentEl.createEl('h2', { text: '✨ 激活 Crisp Visual 专业版', cls: 'crisp-visual-modal-title' });
+    contentEl.createEl('p', {
+      text: '输入 Crisp Suite 或 Crisp Visual 授权码，解锁海量素材流式浏览、本地离线 Vision OCR 搜图、Cmd+V 秒存入库及 ANKS 认知卡片。',
+      cls: 'crisp-visual-modal-desc'
+    });
+
+    const inputWrap = contentEl.createDiv({ cls: 'crisp-visual-modal-input-wrap' });
+    const input = inputWrap.createEl('input', {
+      type: 'password',
+      placeholder: '粘贴 Crisp 授权码 (xxxx.xxxx)...',
+      cls: 'crisp-visual-modal-input'
+    });
+
+    const btnRow = contentEl.createDiv({ cls: 'crisp-visual-modal-actions' });
+    const activateBtn = btnRow.createEl('button', { text: '立即激活', cls: 'crisp-visual-btn crisp-visual-btn-accent' });
+    const cancelBtn = btnRow.createEl('button', { text: '取消', cls: 'crisp-visual-btn' });
+
+    cancelBtn.addEventListener('click', () => this.close());
+    activateBtn.addEventListener('click', async () => {
+      const code = input.value.trim();
+      if (!code) {
+        new Notice('请输入有效的 Crisp 授权码');
+        return;
+      }
+      activateBtn.setAttr('disabled', 'true');
+      activateBtn.setText('验证中...');
+      const res = await this.plugin.activateLicense(code);
+      if (res.valid) {
+        new Notice('🎉 Crisp Visual 专业版激活成功！已解锁全部功能。');
+        this.close();
+        if (this.onActivated) this.onActivated();
+      } else {
+        activateBtn.removeAttribute('disabled');
+        activateBtn.setText('立即激活');
+        new Notice(`❌ 激活失败：${res.reason || '授权码无效'}`);
+      }
+    });
+
+    const buyLink = contentEl.createEl('div', { cls: 'crisp-visual-modal-footer' });
+    buyLink.innerHTML = `<span>一码激活 Crisp 9 款全家桶：</span><a href="https://xhslink.cn/m/3MwtKu4822b" target="_blank">前往小红书 letschips 获取</a>`;
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 
@@ -663,8 +722,12 @@ class MediaScanner {
   }
 
   async runOCR(item) {
+    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+      return null;
+    }
+
     const ocrBinary = getOcrBinaryPath(this.plugin.app);
-    if (!fs.existsSync(ocrBinary)) {
+    if (!ocrBinary || !fs.existsSync(ocrBinary)) {
       console.warn('[Crisp Visual] OCR binary not found at:', ocrBinary);
       return null;
     }
@@ -697,6 +760,9 @@ class MediaScanner {
   }
 
   async updateItemStar(item, star) {
+    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+      return false;
+    }
     try {
       const meta = JSON.parse(fs.readFileSync(item.metaPath, 'utf-8'));
       meta.star = star;
@@ -863,6 +929,12 @@ class CrispVisualView extends ItemView {
   }
 
   async handlePaste(e) {
+    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+      new Notice('🔒 剪贴板秒存入库为 Crisp Pro 专业版功能');
+      new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+      return;
+    }
+
     try {
       new Notice('📥 [Crisp Visual] 正在读取剪贴板...');
       const buffer = await readClipboardImageBuffer();
@@ -890,6 +962,12 @@ class CrispVisualView extends ItemView {
 
   async handleDrop(e) {
     e.preventDefault();
+    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+      new Notice('🔒 拖拽快速存图为 Crisp Pro 专业版功能');
+      new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+      return;
+    }
+
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       let imported = 0;
       for (const file of e.dataTransfer.files) {
@@ -922,14 +1000,15 @@ class CrispVisualView extends ItemView {
   }
 
   applyFilters() {
-    this.filteredItems = this.items.filter(item => {
+    const isPro = this.plugin.licenseManager && this.plugin.licenseManager.isEntitled();
+    const result = this.items.filter(item => {
       // 1. Search Query Filter (Name + Tags + Folders + OCR Text)
       if (this.searchQuery) {
         const q = this.searchQuery.toLowerCase();
         const matchName = item.name.toLowerCase().includes(q);
         const matchTag = item.tags.some(t => t.toLowerCase().includes(q));
         const matchFolder = item.foldersNamed.some(f => f.toLowerCase().includes(q));
-        const matchOcr = (item.ocrText || item.annotation || '').toLowerCase().includes(q);
+        const matchOcr = (isPro && (item.ocrText || item.annotation || '').toLowerCase().includes(q));
         if (!matchName && !matchTag && !matchFolder && !matchOcr) return false;
       }
 
@@ -974,6 +1053,15 @@ class CrispVisualView extends ItemView {
 
       return true;
     });
+
+    this.totalFilteredCount = result.length;
+    if (!isPro && result.length > 20) {
+      this.filteredItems = result.slice(0, 20);
+      this.isFreeCapped = true;
+    } else {
+      this.filteredItems = result;
+      this.isFreeCapped = false;
+    }
   }
 
   render() {
@@ -1016,6 +1104,18 @@ class CrispVisualView extends ItemView {
 
     // Right Header Controls
     const rightHeader = header.createDiv({ cls: 'crisp-visual-header-right' });
+
+    const isPro = this.plugin.licenseManager && this.plugin.licenseManager.isEntitled();
+    if (!isPro) {
+      const proPill = rightHeader.createEl('button', {
+        cls: 'crisp-visual-btn crisp-visual-btn-pro',
+        title: '一码解锁 Crisp Visual 全部专业版功能'
+      });
+      proPill.innerHTML = `<span>✨ 激活 Pro</span>`;
+      proPill.addEventListener('click', () => {
+        new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+      });
+    }
 
     // 1. Ingest Paste Button
     const pasteBtn = rightHeader.createEl('button', { cls: 'crisp-visual-btn', title: '从剪贴板快速导入截图/图片 (Cmd+V)' });
@@ -1436,6 +1536,21 @@ class CrispVisualView extends ItemView {
         this.showContextMenu(e, item);
       });
     });
+
+    if (this.isFreeCapped) {
+      const banner = this.galleryContainer.createDiv({ cls: 'crisp-visual-pro-banner' });
+      banner.innerHTML = `
+        <div class="crisp-visual-pro-banner-icon">✨</div>
+        <div class="crisp-visual-pro-banner-content">
+          <div class="crisp-visual-pro-banner-title">解锁全部 ${this.totalFilteredCount} 张素材与专业版功能</div>
+          <div class="crisp-visual-pro-banner-desc">免费版仅预览前 20 张素材。激活后即可解锁全库海量浏览、本地离线 Vision OCR 搜图、Cmd+V 秒存入库及 ANKS 认知卡片。</div>
+        </div>
+      `;
+      const actBtn = banner.createEl('button', { cls: 'crisp-visual-btn crisp-visual-btn-accent', text: '🔑 输入授权码' });
+      actBtn.addEventListener('click', () => {
+        new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+      });
+    }
   }
 
   generateInsertSyntax(item) {
@@ -1482,6 +1597,11 @@ class CrispVisualView extends ItemView {
       .setTitle('提取/刷新本地 OCR 文案')
       .setIcon('scan-text')
       .onClick(async () => {
+        if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+          new Notice('🔒 本地 Vision OCR 识别为 Crisp Pro 专业版功能');
+          new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+          return;
+        }
         new Notice('[Crisp Visual] 正在进行本地 Vision OCR 识别...');
         const text = await this.scanner.runOCR(item);
         if (text) {
@@ -1531,6 +1651,12 @@ class CrispVisualView extends ItemView {
   }
 
   async bindToActiveTopic(item) {
+    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+      new Notice('🔒 选题双向绑定为 Crisp Pro 专业版功能');
+      new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+      return;
+    }
+
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) {
       new Notice('请先打开一篇选题笔记（如 CNT-xxx 选题文稿）');
@@ -1559,6 +1685,12 @@ class CrispVisualView extends ItemView {
   }
 
   async createRawCard(item) {
+    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+      new Notice('🔒 ANKS 认知卡片生成为 Crisp Pro 专业版功能');
+      new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+      return;
+    }
+
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const cardId = `RAW-${today}-${item.id}`;
     const cardTitle = item.name;
@@ -1618,12 +1750,18 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
 `;
 
     try {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      if (!fs.existsSync(path.dirname(fullPath))) {
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      }
       fs.writeFileSync(fullPath, content, 'utf-8');
-      new Notice(`已生成认知卡片：${cardId}.md`);
-      this.app.workspace.openLinkText(destRel, '', true);
+      new Notice(`🎉 已成功创建 ANKS 认知卡片：${cardId}.md`);
+      
+      const tfile = this.app.vault.getAbstractFileByPath(destRel);
+      if (tfile) {
+        this.app.workspace.getLeaf(true).openFile(tfile);
+      }
     } catch (err) {
-      new Notice(`生成卡片失败: ${err.message}`);
+      new Notice(`❌ 生成卡片失败: ${err.message}`);
     }
   }
 
@@ -1631,6 +1769,16 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
     let currentItem = initialItem;
     const overlay = document.body.createDiv({ cls: 'crisp-visual-inspector-overlay' });
 
+    const modal = overlay.createDiv({ cls: 'crisp-visual-inspector-modal' });
+
+    // Floating Navigation Buttons (Previous & Next)
+    const prevBtn = overlay.createDiv({ cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-prev', title: '上一张 (←)' });
+    prevBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>`;
+
+    const nextBtn = overlay.createDiv({ cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-next', title: '下一张 (→)' });
+    nextBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+    // Close logic
     const closeInspector = () => {
       window.removeEventListener('keydown', handleKey);
       overlay.remove();
@@ -1640,43 +1788,32 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
       if (e.target === overlay) closeInspector();
     });
 
-    // Navigation buttons
-    const prevBtn = overlay.createEl('button', {
-      cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-prev',
-      title: '上一张 (← 方向键)'
-    });
-    prevBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>`;
-
-    const nextBtn = overlay.createEl('button', {
-      cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-next',
-      title: '下一张 (→ 方向键)'
-    });
-    nextBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>`;
-
-    const card = overlay.createDiv({ cls: 'crisp-visual-inspector-card' });
-
     const renderInspectorContent = (item) => {
-      card.empty();
       currentItem = item;
+      modal.empty();
 
       // Header
-      const header = card.createDiv({ cls: 'crisp-visual-inspector-header' });
-      const titleBadge = header.createDiv({ cls: 'crisp-visual-title-badge' });
-      titleBadge.innerHTML = `${ICON_INSPECTOR_HEADER}<span>${item.name}</span>`;
-      const closeBtn = header.createEl('button', { cls: 'crisp-visual-btn', text: '✕ 关闭' });
-      closeBtn.addEventListener('click', () => closeInspector());
+      const header = modal.createDiv({ cls: 'crisp-visual-inspector-header' });
+      const titleWrap = header.createDiv({ cls: 'crisp-visual-inspector-title-wrap' });
+      titleWrap.innerHTML = ICON_INSPECTOR_HEADER;
+      const title = titleWrap.createDiv({ cls: 'crisp-visual-inspector-title' });
+      title.setText(item.name);
 
-      // Content
-      const content = card.createDiv({ cls: 'crisp-visual-inspector-content' });
+      const closeBtn = header.createEl('button', { cls: 'crisp-visual-inspector-close-btn' });
+      closeBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+      closeBtn.addEventListener('click', closeInspector);
 
-      // Image Pane
-      const imgPane = content.createDiv({ cls: 'crisp-visual-inspector-img-pane' });
-      const img = imgPane.createEl('img');
+      // Body
+      const body = modal.createDiv({ cls: 'crisp-visual-inspector-body' });
+
+      // Left: Image Preview
+      const previewPane = body.createDiv({ cls: 'crisp-visual-inspector-preview' });
+      const img = previewPane.createEl('img');
       img.alt = item.name;
       attachImageSrc(img, item.filePath, item.ext);
 
-      // Meta Pane
-      const metaPane = content.createDiv({ cls: 'crisp-visual-inspector-meta-pane' });
+      // Right: Metadata & Actions
+      const metaPane = body.createDiv({ cls: 'crisp-visual-inspector-meta' });
 
       const createMetaRow = (label, val) => {
         const row = metaPane.createDiv({ cls: 'crisp-visual-meta-row' });
@@ -1702,6 +1839,11 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
         });
         s.innerHTML = `<svg viewBox="0 0 24 24" class="crisp-visual-star-svg"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>`;
         s.addEventListener('click', async () => {
+          if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+            new Notice('🔒 星级评分修改与持久化为 Crisp Pro 专业版功能');
+            new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+            return;
+          }
           const newStar = item.star === starNum ? 0 : starNum;
           await this.scanner.updateItemStar(item, newStar);
           this.renderGalleryOnly();
