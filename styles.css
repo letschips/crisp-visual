@@ -972,24 +972,30 @@
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 1010;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: background 0.15s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .crisp-visual-inspector-nav-btn:hover {
   background: var(--interactive-accent);
-  transform: translateY(-50%) scale(1.1);
+  color: var(--text-on-accent, #ffffff);
+  transform: translateY(-50%) scale(1.08);
   border-color: transparent;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.crisp-visual-inspector-nav-btn:active {
+  transform: translateY(-50%) scale(0.95);
 }
 
 .crisp-visual-nav-prev {
