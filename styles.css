@@ -5,7 +5,7 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: var(--background-primary);
+  background: transparent;
   color: var(--text-normal);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
@@ -20,7 +20,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 14px;
-  background: var(--background-secondary);
+  background: transparent;
   border-bottom: 1px solid var(--background-modifier-border);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -139,7 +139,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  background: var(--background-primary);
+  background: var(--background-modifier-form-field);
   padding: 3px 6px;
   border-radius: 20px;
   border: 1px solid var(--background-modifier-border);
@@ -266,7 +266,7 @@
 }
 
 .crisp-visual-segment-btn.active {
-  background: var(--background-primary);
+  background: var(--background-modifier-form-field-highlighted, var(--interactive-normal));
   color: var(--text-normal);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
@@ -277,6 +277,7 @@
   flex: 1;
   overflow: hidden;
   position: relative;
+  background: transparent;
 }
 
 /* Sidebar / Dynamic Eagle Folder Tree */
@@ -284,7 +285,7 @@
   width: 220px;
   min-width: 190px;
   max-width: 300px;
-  background: var(--background-secondary);
+  background: transparent;
   border-right: 1px solid var(--background-modifier-border);
   display: flex;
   flex-direction: column;
