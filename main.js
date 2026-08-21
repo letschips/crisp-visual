@@ -1807,13 +1807,15 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
       cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-prev',
       title: '上一张 (← 方向键)'
     });
-    prevBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>`;
+    prevBtn.style.cssText = 'background: var(--interactive-accent) !important; color: #ffffff !important; border: none !important; box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;';
+    prevBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>`;
 
     const nextBtn = overlay.createEl('button', {
       cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-next',
       title: '下一张 (→ 方向键)'
     });
-    nextBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>`;
+    nextBtn.style.cssText = 'background: var(--interactive-accent) !important; color: #ffffff !important; border: none !important; box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;';
+    nextBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>`;
 
     const card = overlay.createDiv({ cls: 'crisp-visual-inspector-card' });
 
