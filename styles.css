@@ -314,6 +314,38 @@
   padding: 10px 8px 4px 8px;
 }
 
+.crisp-visual-sidebar-divider-collapsible {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  user-select: none;
+  margin-top: 4px;
+}
+
+.crisp-visual-sidebar-divider-collapsible:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.crisp-visual-divider-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.crisp-visual-divider-count {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
 .crisp-visual-folder-tree {
   display: flex;
   flex-direction: column;

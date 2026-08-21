@@ -892,6 +892,7 @@ class CrispVisualView extends ItemView {
     this.selectedTag = null;
     this.expandedFolders = new Set();
     this.isSidebarCollapsed = false;
+    this.isTagsCollapsed = false;
     this.isGrayscaleMode = false;
     this.densityMode = this.plugin.settings.densityMode || 'standard';
   }
@@ -1384,31 +1385,47 @@ class CrispVisualView extends ItemView {
     });
 
     if (tagCountMap.size > 0) {
-      const tagDivider = sidebar.createDiv({ cls: 'crisp-visual-sidebar-divider' });
-      tagDivider.setText('标签分类');
+      const isExpanded = !this.isTagsCollapsed;
+      const tagDivider = sidebar.createDiv({ cls: 'crisp-visual-sidebar-divider crisp-visual-sidebar-divider-collapsible' });
+      tagDivider.title = this.isTagsCollapsed ? '点击展开所有标签' : '点击收起所有标签';
 
-      const tagContainer = sidebar.createDiv({ cls: 'crisp-visual-tag-list' });
-      const sortedTags = Array.from(tagCountMap.entries()).sort((a, b) => b[1] - a[1]);
-      
-      sortedTags.forEach(([tag, count]) => {
-        const tagRow = tagContainer.createDiv({
-          cls: `crisp-visual-tree-row ${this.selectedTag === tag ? 'active' : ''}`
-        });
-        const left = tagRow.createDiv({ cls: 'crisp-visual-tree-left' });
-        left.innerHTML = `<span class="crisp-visual-tag-hash">#</span><span class="crisp-visual-folder-name">${tag}</span>`;
-        const countEl = tagRow.createDiv({ cls: 'crisp-visual-nav-item-count' });
-        countEl.setText(String(count));
-        
-        tagRow.addEventListener('click', () => {
-          if (this.selectedTag === tag) {
-            this.selectedTag = null;
-          } else {
-            this.selectedTag = tag;
-          }
-          this.applyFilters();
-          this.render();
-        });
+      const leftPart = tagDivider.createDiv({ cls: 'crisp-visual-divider-left' });
+      const chevron = leftPart.createSpan({ cls: `crisp-visual-chevron ${isExpanded ? 'expanded' : ''}` });
+      chevron.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>`;
+      leftPart.createSpan({ text: '标签分类' });
+
+      tagDivider.createSpan({ cls: 'crisp-visual-divider-count', text: String(tagCountMap.size) });
+
+      tagDivider.addEventListener('click', () => {
+        this.isTagsCollapsed = !this.isTagsCollapsed;
+        this.renderSidebar(sidebar);
       });
+
+      if (isExpanded) {
+        const tagContainer = sidebar.createDiv({ cls: 'crisp-visual-tag-list' });
+        const sortedTags = Array.from(tagCountMap.entries()).sort((a, b) => b[1] - a[1]);
+        
+        sortedTags.forEach(([tag, count]) => {
+          const tagRow = tagContainer.createDiv({
+            cls: `crisp-visual-tree-row ${this.selectedTag === tag ? 'active' : ''}`
+          });
+          const left = tagRow.createDiv({ cls: 'crisp-visual-tree-left' });
+          left.innerHTML = `<span class="crisp-visual-tag-hash">#</span><span class="crisp-visual-folder-name">${tag}</span>`;
+          const countEl = tagRow.createDiv({ cls: 'crisp-visual-nav-item-count' });
+          countEl.setText(String(count));
+          
+          tagRow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.selectedTag === tag) {
+              this.selectedTag = null;
+            } else {
+              this.selectedTag = tag;
+            }
+            this.applyFilters();
+            this.render();
+          });
+        });
+      }
     }
   }
 
