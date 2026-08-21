@@ -892,6 +892,7 @@ class CrispVisualView extends ItemView {
     this.selectedTag = null;
     this.expandedFolders = new Set();
     this.isSidebarCollapsed = false;
+    this.isFoldersCollapsed = false;
     this.isTagsCollapsed = false;
     this.isGrayscaleMode = false;
     this.densityMode = this.plugin.settings.densityMode || 'standard';
@@ -1306,71 +1307,85 @@ class CrispVisualView extends ItemView {
       });
     }
 
-    // Section Divider
-    const divider = sidebar.createDiv({ cls: 'crisp-visual-sidebar-divider' });
-    divider.setText('资源目录');
+    // 2. Render Folders Section in Sidebar
+    if (this.scanner.folders && this.scanner.folders.length > 0) {
+      const isFoldersExpanded = !this.isFoldersCollapsed;
+      const folderDivider = sidebar.createDiv({ cls: 'crisp-visual-sidebar-divider crisp-visual-sidebar-divider-collapsible' });
+      folderDivider.title = this.isFoldersCollapsed ? '点击展开资源目录' : '点击收起资源目录';
 
-    // 2. Render Recursive Dynamic Folders Tree from Eagle
-    const treeContainer = sidebar.createDiv({ cls: 'crisp-visual-folder-tree' });
-
-    const renderFolderNode = (f, container, level = 0) => {
-      const nodeEl = container.createDiv({ cls: 'crisp-visual-tree-node' });
-      const hasChildren = f.children && f.children.length > 0;
-      const isExpanded = this.expandedFolders.has(f.id);
-      const isSelected = this.selectedFolderId === f.id;
-
-      const row = nodeEl.createDiv({ cls: `crisp-visual-tree-row ${isSelected ? 'active' : ''}` });
-      row.style.paddingLeft = `${6 + level * 14}px`;
-
-      const left = row.createDiv({ cls: 'crisp-visual-tree-left' });
-
-      // Chevron
-      const chevron = left.createSpan({ cls: `crisp-visual-chevron ${hasChildren ? '' : 'hidden'} ${isExpanded ? 'expanded' : ''}` });
+      const leftPart = folderDivider.createDiv({ cls: 'crisp-visual-divider-left' });
+      const chevron = leftPart.createSpan({ cls: `crisp-visual-chevron ${isFoldersExpanded ? 'expanded' : ''}` });
       chevron.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>`;
-      if (hasChildren) {
-        chevron.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.expandedFolders.has(f.id)) {
-            this.expandedFolders.delete(f.id);
-          } else {
-            this.expandedFolders.add(f.id);
-          }
-          this.renderSidebar(sidebar);
-        });
-      }
+      leftPart.createSpan({ text: '资源目录' });
 
-      // Folder Color Dot / Icon
-      const folderColor = FOLDER_COLOR_MAP[f.iconColor] || '#888888';
-      const icon = left.createSpan({ cls: 'crisp-visual-folder-icon' });
-      icon.innerHTML = `<svg viewBox="0 0 24 24" fill="${folderColor}" stroke="none"><path d="M4 4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2H4z"/></svg>`;
+      folderDivider.createSpan({ cls: 'crisp-visual-divider-count', text: String(this.scanner.folders.length) });
 
-      // Folder Name
-      const nameEl = left.createSpan({ cls: 'crisp-visual-folder-name' });
-      nameEl.setText(f.name);
-      nameEl.title = f.name;
-
-      // Recursive Count
-      const count = this.items.filter(i => i.allFolderIds && i.allFolderIds.has(f.id)).length;
-      const countEl = row.createDiv({ cls: 'crisp-visual-nav-item-count' });
-      countEl.setText(String(count));
-
-      row.addEventListener('click', () => {
-        this.selectedFolderId = f.id;
-        this.applyFilters();
-        this.render();
+      folderDivider.addEventListener('click', () => {
+        this.isFoldersCollapsed = !this.isFoldersCollapsed;
+        this.renderSidebar(sidebar);
       });
 
-      if (hasChildren && isExpanded) {
-        const childrenContainer = nodeEl.createDiv({ cls: 'crisp-visual-tree-children' });
-        for (const child of f.children) {
-          renderFolderNode(child, childrenContainer, level + 1);
-        }
-      }
-    };
+      if (isFoldersExpanded) {
+        const treeContainer = sidebar.createDiv({ cls: 'crisp-visual-folder-tree' });
 
-    if (this.scanner.folders && this.scanner.folders.length > 0) {
-      for (const f of this.scanner.folders) {
-        renderFolderNode(f, treeContainer, 0);
+        const renderFolderNode = (f, container, level = 0) => {
+          const nodeEl = container.createDiv({ cls: 'crisp-visual-tree-node' });
+          const hasChildren = f.children && f.children.length > 0;
+          const isExpanded = this.expandedFolders.has(f.id);
+          const isSelected = this.selectedFolderId === f.id;
+
+          const row = nodeEl.createDiv({ cls: `crisp-visual-tree-row ${isSelected ? 'active' : ''}` });
+          row.style.paddingLeft = `${6 + level * 14}px`;
+
+          const left = row.createDiv({ cls: 'crisp-visual-tree-left' });
+
+          // Chevron
+          const chevron = left.createSpan({ cls: `crisp-visual-chevron ${hasChildren ? '' : 'hidden'} ${isExpanded ? 'expanded' : ''}` });
+          chevron.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>`;
+          if (hasChildren) {
+            chevron.addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (this.expandedFolders.has(f.id)) {
+                this.expandedFolders.delete(f.id);
+              } else {
+                this.expandedFolders.add(f.id);
+              }
+              this.renderSidebar(sidebar);
+            });
+          }
+
+          // Folder Color Dot / Icon
+          const folderColor = FOLDER_COLOR_MAP[f.iconColor] || '#888888';
+          const icon = left.createSpan({ cls: 'crisp-visual-folder-icon' });
+          icon.innerHTML = `<svg viewBox="0 0 24 24" fill="${folderColor}" stroke="none"><path d="M4 4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2H4z"/></svg>`;
+
+          // Folder Name
+          const nameEl = left.createSpan({ cls: 'crisp-visual-folder-name' });
+          nameEl.setText(f.name);
+          nameEl.title = f.name;
+
+          // Recursive Count
+          const count = this.items.filter(i => i.allFolderIds && i.allFolderIds.has(f.id)).length;
+          const countEl = row.createDiv({ cls: 'crisp-visual-nav-item-count' });
+          countEl.setText(String(count));
+
+          row.addEventListener('click', () => {
+            this.selectedFolderId = f.id;
+            this.applyFilters();
+            this.render();
+          });
+
+          if (hasChildren && isExpanded) {
+            const childrenContainer = nodeEl.createDiv({ cls: 'crisp-visual-tree-children' });
+            for (const child of f.children) {
+              renderFolderNode(child, childrenContainer, level + 1);
+            }
+          }
+        };
+
+        for (const f of this.scanner.folders) {
+          renderFolderNode(f, treeContainer, 0);
+        }
       }
     }
 
