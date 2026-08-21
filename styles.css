@@ -52,8 +52,10 @@
 }
 
 .crisp-visual-toggle-sidebar-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
   display: block;
 }
 
