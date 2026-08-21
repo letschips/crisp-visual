@@ -972,26 +972,22 @@
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent, #ffffff);
+  border: none !important;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 1010;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .crisp-visual-inspector-nav-btn:hover {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #ffffff);
-  transform: translateY(-50%) scale(1.08);
-  border-color: transparent;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  background: var(--interactive-accent-hover, var(--interactive-accent));
+  transform: translateY(-50%) scale(1.12);
+  box-shadow: 0 6px 22px rgba(var(--interactive-accent-rgb), 0.5);
 }
 
 .crisp-visual-inspector-nav-btn:active {
