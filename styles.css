@@ -21,7 +21,7 @@
   gap: 8px;
   padding: 8px 14px;
   background: transparent;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: none;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   z-index: 10;
@@ -276,7 +276,7 @@
   min-width: 190px;
   max-width: 300px;
   background: transparent;
-  border-right: 1px solid var(--background-modifier-border);
+  border-right: none;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
