@@ -1185,31 +1185,7 @@ class CrispVisualView extends ItemView {
       this.renderGalleryOnly();
     });
 
-    // 6. Color dots
-    const colorBar = rightHeader.createDiv({ cls: 'crisp-visual-color-bar' });
-    const colors = [
-      { id: 'all', color: 'transparent', title: '全部色彩' },
-      { id: 'red', color: '#ff3b30', title: '红色系' },
-      { id: 'orange', color: '#ff9500', title: '橙色系' },
-      { id: 'yellow', color: '#ffcc00', title: '黄色系' },
-      { id: 'green', color: '#34c759', title: '绿色系' },
-      { id: 'blue', color: '#007aff', title: '蓝色系' },
-      { id: 'purple', color: '#af52de', title: '紫色系' },
-      { id: 'dark', color: '#1c1c1e', title: '暗黑/深色' }
-    ];
-
-    colors.forEach(c => {
-      const dot = colorBar.createDiv({ cls: `crisp-visual-color-dot ${this.selectedColor === c.id ? 'active' : ''}` });
-      dot.title = c.title;
-      dot.style.background = c.color === 'transparent' ? 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)' : c.color;
-      dot.addEventListener('click', () => {
-        this.selectedColor = c.id;
-        this.applyFilters();
-        this.render();
-      });
-    });
-
-    // 7. Format Selector
+    // 6. Format Selector
     const formatSelect = rightHeader.createEl('select', { cls: 'crisp-visual-format-select' });
     ['all', 'gif', 'png', 'jpg', 'svg', 'webp'].forEach(fmt => {
       const opt = formatSelect.createEl('option', { value: fmt, text: fmt.toUpperCase() });

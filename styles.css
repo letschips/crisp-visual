@@ -138,35 +138,6 @@
   flex-wrap: wrap;
 }
 
-.crisp-visual-color-bar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--background-modifier-form-field);
-  padding: 3px 6px;
-  border-radius: 20px;
-  border: 1px solid var(--background-modifier-border);
-}
-
-.crisp-visual-color-dot {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 1.5px solid transparent;
-  transition: transform 0.15s ease, border-color 0.15s ease;
-}
-
-.crisp-visual-color-dot:hover {
-  transform: scale(1.25);
-}
-
-.crisp-visual-color-dot.active {
-  border-color: var(--text-normal);
-  transform: scale(1.2);
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
-}
-
 .crisp-visual-format-select {
   height: 28px;
   padding: 2px 6px;
