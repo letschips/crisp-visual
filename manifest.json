@@ -1,7 +1,7 @@
 {
   "id": "crisp-visual",
   "name": "Crisp Visual",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minAppVersion": "1.6.0",
   "description": "High-performance Apple-aesthetic visual asset gallery, external media library mounting, color palette filtering, and seamless drag-and-drop linking for Obsidian.",
   "author": "letschips",

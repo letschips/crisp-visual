@@ -349,28 +349,23 @@ function discoverEagleLibraryPath(app) {
 }
 
 /**
- * Robust MIME type detection by magic bytes & extension
+ * Robust MIME type detection by in-memory magic bytes & extension
  */
-function getMimeType(filePath, ext) {
-  try {
-    const fd = fs.openSync(filePath, 'r');
-    const buf = Buffer.alloc(12);
-    fs.readSync(fd, buf, 0, 12, 0);
-    fs.closeSync(fd);
-
-    if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') {
+function getMimeType(buffer, ext) {
+  if (buffer && buffer.length >= 12) {
+    if (buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') {
       return 'image/webp';
     }
-    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
       return 'image/png';
     }
-    if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) {
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
       return 'image/jpeg';
     }
-    if (buf.slice(0, 3).toString('ascii') === 'GIF') {
+    if (buffer.slice(0, 3).toString('ascii') === 'GIF') {
       return 'image/gif';
     }
-  } catch (e) {}
+  }
 
   const map = {
     'jpg': 'image/jpeg',
@@ -392,7 +387,7 @@ function attachImageSrc(imgEl, filePath, ext) {
 
   fs.promises.readFile(filePath)
     .then(buffer => {
-      const mime = getMimeType(filePath, ext);
+      const mime = getMimeType(buffer, ext);
       imgEl.src = `data:${mime};base64,${buffer.toString('base64')}`;
     })
     .catch(err => {
@@ -1004,14 +999,16 @@ class CrispVisualView extends ItemView {
   applyFilters() {
     const isPro = this.plugin.licenseManager && this.plugin.licenseManager.isEntitled();
     const result = this.items.filter(item => {
-      // 1. Search Query Filter (Name + Tags + Folders + OCR Text)
+      // 1. Search Query Filter (Name + Tags + Folders + OCR Text + Annotation + Ext)
       if (this.searchQuery) {
-        const q = this.searchQuery.toLowerCase();
+        const q = this.searchQuery.toLowerCase().trim();
         const matchName = item.name.toLowerCase().includes(q);
-        const matchTag = item.tags.some(t => t.toLowerCase().includes(q));
-        const matchFolder = item.foldersNamed.some(f => f.toLowerCase().includes(q));
-        const matchOcr = (isPro && (item.ocrText || item.annotation || '').toLowerCase().includes(q));
-        if (!matchName && !matchTag && !matchFolder && !matchOcr) return false;
+        const matchTag = (item.tags || []).some(t => t.toLowerCase().includes(q));
+        const matchFolder = (item.foldersNamed || []).some(f => f.toLowerCase().includes(q));
+        const matchAnnotation = (item.annotation || '').toLowerCase().includes(q);
+        const matchExt = (item.ext || '').toLowerCase() === q;
+        const matchOcr = (isPro && (item.ocrText || '').toLowerCase().includes(q));
+        if (!matchName && !matchTag && !matchFolder && !matchAnnotation && !matchExt && !matchOcr) return false;
       }
 
       // 2. Color Filter
@@ -1019,9 +1016,11 @@ class CrispVisualView extends ItemView {
         if (item.primaryColorGroup !== this.selectedColor) return false;
       }
 
-      // 3. Format Filter
+      // 3. Format Filter (Normalizing jpg and jpeg)
       if (this.selectedFormat !== 'all') {
-        if (item.ext.toLowerCase() !== this.selectedFormat.toLowerCase()) return false;
+        const itemExt = item.ext.toLowerCase() === 'jpeg' ? 'jpg' : item.ext.toLowerCase();
+        const selFmt = this.selectedFormat.toLowerCase() === 'jpeg' ? 'jpg' : this.selectedFormat.toLowerCase();
+        if (itemExt !== selFmt) return false;
       }
 
       // 4. Aspect Ratio Filter
@@ -2151,7 +2150,7 @@ class CrispVisualSettingTab extends PluginSettingTab {
  */
 module.exports = class CrispVisualPlugin extends Plugin {
   async onload() {
-    console.log('[Crisp Visual] Loading plugin v0.1.0...');
+    console.log('[Crisp Visual] Loading plugin v0.2.0...');
     await this.loadSettings();
 
     // Initialize License Manager & Auto-inherit from Crisp Suite
