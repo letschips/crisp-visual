@@ -114,24 +114,20 @@
   height: 30px !important;
   box-sizing: border-box !important;
   padding: 4px 12px 4px 32px !important;
-  background: rgba(125, 125, 125, 0.08) !important;
-  border: 1px solid transparent !important;
+  background: var(--background-modifier-form-field) !important;
+  border: none !important;
   border-radius: 7px !important;
   color: var(--text-normal) !important;
   font-size: 12px !important;
   line-height: normal !important;
   text-indent: 0 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.crisp-visual-search-input:hover {
-  background: rgba(125, 125, 125, 0.12) !important;
 }
 
 .crisp-visual-search-input:focus {
   background: var(--background-primary) !important;
-  border-color: var(--interactive-accent) !important;
-  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2), 0 1px 3px rgba(0, 0, 0, 0.08) !important;
   outline: none !important;
 }
 
@@ -139,26 +135,27 @@
 .crisp-visual-header-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .crisp-visual-format-select {
   height: 28px;
-  padding: 2px 6px;
-  background: transparent;
-  border: 1px solid transparent;
+  padding: 2px 8px;
+  background: var(--interactive-normal);
+  border: none !important;
   border-radius: 6px;
-  color: var(--text-muted);
+  color: var(--text-normal);
   font-size: 12px;
   font-weight: 400 !important;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition: all 0.15s ease;
 }
 
 .crisp-visual-format-select:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
+  background: var(--interactive-hover);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .crisp-visual-custom-icon {
@@ -188,14 +185,15 @@
   justify-content: center;
   gap: 6px;
   height: 28px;
-  padding: 0 8px;
-  background: transparent;
-  border: 1px solid transparent;
+  padding: 0 9px;
+  background: var(--interactive-normal);
+  border: none !important;
   border-radius: 6px;
-  color: var(--text-muted);
+  color: var(--text-normal);
   font-size: 12px;
   font-weight: 400 !important;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition: all 0.15s ease;
 }
 
@@ -206,35 +204,39 @@
 
 .crisp-visual-header button:hover,
 .crisp-visual-btn:hover {
-  background: var(--background-modifier-hover);
+  background: var(--interactive-hover);
   color: var(--text-normal);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .crisp-visual-btn-active {
-  background: rgba(var(--interactive-accent-rgb), 0.14) !important;
+  background: rgba(var(--interactive-accent-rgb), 0.15) !important;
   color: var(--interactive-accent) !important;
-  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .crisp-visual-btn-accent {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
-  border-color: transparent;
+  border: none !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .crisp-visual-btn-accent:hover {
   background: var(--interactive-accent-hover);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 /* Layout Density Segmented Control (Apple-style recessed capsule) */
 .crisp-visual-segmented-control {
   display: flex;
   align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
+  background: var(--interactive-normal);
+  border: none !important;
   border-radius: 7px;
-  padding: 1px;
+  padding: 2px;
   gap: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .crisp-visual-segment-btn {
@@ -251,13 +253,12 @@
 
 .crisp-visual-segment-btn:hover {
   color: var(--text-normal);
-  background: var(--background-modifier-hover);
 }
 
 .crisp-visual-segment-btn.active {
-  background: var(--background-modifier-hover);
+  background: var(--background-modifier-form-field-highlighted, var(--background-primary));
   color: var(--text-normal);
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 /* Main Layout */
