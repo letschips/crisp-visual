@@ -1,0 +1,22 @@
+{
+  "name": "obsidian-crisp-visual",
+  "version": "0.1.0",
+  "description": "High-performance Apple-aesthetic visual asset gallery, Eagle library integration, color palette filtering, Vision OCR, and seamless drag-and-drop linking for Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "check": "node --check main.js"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "eagle",
+    "gallery",
+    "dam",
+    "visual",
+    "ocr",
+    "apple-aesthetic"
+  ],
+  "author": "letschips",
+  "license": "MIT",
+  "homepage": "https://github.com/letschips/crisp-visual"
+}
