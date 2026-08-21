@@ -1027,10 +1027,32 @@ class CrispVisualView extends ItemView {
       // 4. Aspect Ratio Filter
       if (this.selectedRatio !== 'all') {
         const r = (item.width && item.height) ? (item.width / item.height) : 1;
-        if (this.selectedRatio === 'landscape' && r <= 1.2) return false;
-        if (this.selectedRatio === 'portrait' && r >= 0.85) return false;
-        if (this.selectedRatio === 'square' && (r < 0.85 || r > 1.2)) return false;
-        if (this.selectedRatio === 'banner' && r <= 2.0) return false;
+        if (this.selectedRatio === '1:1') {
+          if (r < 0.92 || r > 1.08) return false;
+        } else if (this.selectedRatio === '3:4') {
+          if (r < 0.68 || r > 0.82) return false;
+        } else if (this.selectedRatio === '4:3') {
+          if (r < 1.25 || r > 1.45) return false;
+        } else if (this.selectedRatio === '9:16') {
+          if (r < 0.50 || r > 0.65) return false;
+        } else if (this.selectedRatio === '16:9') {
+          if (r < 1.65 || r > 1.95) return false;
+        } else if (this.selectedRatio === 'banner') {
+          if (r < 1.95) return false;
+        } else if (this.selectedRatio === 'long') {
+          if (r >= 0.50) return false;
+        } else if (this.selectedRatio === 'other') {
+          const isStandard = (
+            (r >= 0.92 && r <= 1.08) ||
+            (r >= 0.68 && r <= 0.82) ||
+            (r >= 1.25 && r <= 1.45) ||
+            (r >= 0.50 && r <= 0.65) ||
+            (r >= 1.65 && r <= 1.95) ||
+            (r >= 1.95) ||
+            (r < 0.50)
+          );
+          if (isStandard) return false;
+        }
       }
 
       // 5. Star Rating Filter
@@ -1154,10 +1176,14 @@ class CrispVisualView extends ItemView {
     const ratioSelect = rightHeader.createEl('select', { cls: 'crisp-visual-format-select' });
     [
       { id: 'all', text: '全部比例' },
-      { id: 'landscape', text: '横图 16:9' },
-      { id: 'portrait', text: '竖图 3:4/9:16' },
-      { id: 'square', text: '方图 1:1' },
-      { id: 'banner', text: '横幅 Banner' }
+      { id: '1:1', text: '1:1' },
+      { id: '3:4', text: '3:4' },
+      { id: '4:3', text: '4:3' },
+      { id: '9:16', text: '9:16' },
+      { id: '16:9', text: '16:9' },
+      { id: 'banner', text: 'Banner' },
+      { id: 'long', text: '长图' },
+      { id: 'other', text: '其他' }
     ].forEach(r => {
       const opt = ratioSelect.createEl('option', { value: r.id, text: r.text });
       if (this.selectedRatio === r.id) opt.selected = true;
