@@ -1769,14 +1769,20 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
     let currentItem = initialItem;
     const overlay = document.body.createDiv({ cls: 'crisp-visual-inspector-overlay' });
 
-    const modal = overlay.createDiv({ cls: 'crisp-visual-inspector-modal' });
-
     // Floating Navigation Buttons (Previous & Next)
-    const prevBtn = overlay.createDiv({ cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-prev', title: '上一张 (←)' });
-    prevBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>`;
+    const prevBtn = overlay.createEl('button', {
+      cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-prev',
+      title: '上一张 (← 方向键)'
+    });
+    prevBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>`;
 
-    const nextBtn = overlay.createDiv({ cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-next', title: '下一张 (→)' });
-    nextBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const nextBtn = overlay.createEl('button', {
+      cls: 'crisp-visual-inspector-nav-btn crisp-visual-nav-next',
+      title: '下一张 (→ 方向键)'
+    });
+    nextBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>`;
+
+    const card = overlay.createDiv({ cls: 'crisp-visual-inspector-card' });
 
     // Close logic
     const closeInspector = () => {
@@ -1790,30 +1796,27 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
 
     const renderInspectorContent = (item) => {
       currentItem = item;
-      modal.empty();
+      card.empty();
 
       // Header
-      const header = modal.createDiv({ cls: 'crisp-visual-inspector-header' });
-      const titleWrap = header.createDiv({ cls: 'crisp-visual-inspector-title-wrap' });
-      titleWrap.innerHTML = ICON_INSPECTOR_HEADER;
-      const title = titleWrap.createDiv({ cls: 'crisp-visual-inspector-title' });
-      title.setText(item.name);
+      const header = card.createDiv({ cls: 'crisp-visual-inspector-header' });
+      const titleBadge = header.createDiv({ cls: 'crisp-visual-title-badge' });
+      titleBadge.innerHTML = `${ICON_INSPECTOR_HEADER}<span>${item.name}</span>`;
 
-      const closeBtn = header.createEl('button', { cls: 'crisp-visual-inspector-close-btn' });
-      closeBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-      closeBtn.addEventListener('click', closeInspector);
+      const closeBtn = header.createEl('button', { cls: 'crisp-visual-btn', text: '✕ 关闭' });
+      closeBtn.addEventListener('click', () => closeInspector());
 
-      // Body
-      const body = modal.createDiv({ cls: 'crisp-visual-inspector-body' });
+      // Content (Flex row: Image Left, Metadata Right)
+      const content = card.createDiv({ cls: 'crisp-visual-inspector-content' });
 
       // Left: Image Preview
-      const previewPane = body.createDiv({ cls: 'crisp-visual-inspector-preview' });
-      const img = previewPane.createEl('img');
+      const imgPane = content.createDiv({ cls: 'crisp-visual-inspector-img-pane' });
+      const img = imgPane.createEl('img');
       img.alt = item.name;
       attachImageSrc(img, item.filePath, item.ext);
 
       // Right: Metadata & Actions
-      const metaPane = body.createDiv({ cls: 'crisp-visual-inspector-meta' });
+      const metaPane = content.createDiv({ cls: 'crisp-visual-inspector-meta-pane' });
 
       const createMetaRow = (label, val) => {
         const row = metaPane.createDiv({ cls: 'crisp-visual-meta-row' });
@@ -1866,6 +1869,11 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
       ocrVal.setText(item.ocrText || item.annotation || '（未识别，点击右上角识别）');
       
       runOcrBtn.addEventListener('click', async () => {
+        if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+          new Notice('🔒 本地 Vision OCR 识别为 Crisp Pro 专业版功能');
+          new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+          return;
+        }
         runOcrBtn.setText('识别中...');
         new Notice('[Crisp Visual] 正在进行本地 Vision OCR 识别...');
         const text = await this.scanner.runOCR(item);
