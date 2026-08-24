@@ -6,19 +6,8 @@
   display: none;
 }
 
-/* A transparent macOS window can retain stale sidebar paint while this
-   image-heavy view scrolls. Give only the two affected sidebars an opaque
-   compositor surface while Crisp Visual is active. */
-body.is-translucent:has(
-    .workspace-leaf.mod-active .workspace-leaf-content[data-type="crisp-visual-view"]
-  )
-  .workspace-split.mod-left-split {
-  background: var(--background-secondary) !important;
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-  transition: none !important;
-}
-
+/* Keep Crisp Visual's own asset-directory sidebar stable while its image-heavy
+   gallery scrolls. Do not repaint Obsidian's separate file sidebar. */
 body.is-translucent
   .workspace-leaf-content[data-type="crisp-visual-view"]
   .crisp-visual-sidebar {

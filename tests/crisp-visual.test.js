@@ -358,3 +358,10 @@ test('external Eagle names and tags cannot inject inspector or sidebar markup', 
     '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; tag'
   );
 });
+
+test('activating Crisp Visual never repaints the Obsidian file sidebar', () => {
+  const styles = fs.readFileSync(path.resolve(__dirname, '..', 'styles.css'), 'utf8');
+
+  assert.doesNotMatch(styles, /\.workspace-split\.mod-left-split/);
+  assert.match(styles, /\.crisp-visual-sidebar/);
+});
