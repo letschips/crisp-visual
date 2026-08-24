@@ -1,5 +1,32 @@
 /* Crisp Visual — Apple Aesthetic Visual Asset Gallery CSS */
 
+/* Crisp Visual already renders its own title and toolbar. Keeping Obsidian's
+   default view header creates a redundant 45px blank strip above the gallery. */
+.workspace-leaf-content[data-type="crisp-visual-view"] > .view-header {
+  display: none;
+}
+
+/* A transparent macOS window can retain stale sidebar paint while this
+   image-heavy view scrolls. Give only the two affected sidebars an opaque
+   compositor surface while Crisp Visual is active. */
+body.is-translucent:has(
+    .workspace-leaf.mod-active .workspace-leaf-content[data-type="crisp-visual-view"]
+  )
+  .workspace-split.mod-left-split {
+  background: var(--background-secondary) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  transition: none !important;
+}
+
+body.is-translucent
+  .workspace-leaf-content[data-type="crisp-visual-view"]
+  .crisp-visual-sidebar {
+  background: var(--background-secondary) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 .crisp-visual-container {
   display: flex;
   flex-direction: column;
@@ -207,6 +234,16 @@
   background: var(--interactive-hover);
   color: var(--text-normal);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.crisp-visual-header button:focus-visible,
+.crisp-visual-btn:focus-visible,
+.crisp-visual-format-select:focus-visible,
+.crisp-visual-action-btn:focus-visible,
+.crisp-visual-ocr-btn:focus-visible,
+.crisp-visual-inspector-nav-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent) !important;
+  outline-offset: 2px;
 }
 
 .crisp-visual-btn-active {
@@ -499,7 +536,12 @@
 }
 
 /* Dynamic Responsive Breakpoints based on Pane Width (Container Queries) */
-@container gallery (max-width: 480px) {
+@container gallery (max-width: 220px) {
+  .crisp-visual-masonry.density-compact { column-count: 1; }
+  .crisp-visual-masonry.density-standard { column-count: 1; }
+  .crisp-visual-masonry.density-large { column-count: 1; }
+}
+@container gallery (min-width: 221px) and (max-width: 480px) {
   .crisp-visual-masonry.density-compact { column-count: 2; column-gap: 8px; }
   .crisp-visual-masonry.density-standard { column-count: 1; column-gap: 12px; }
   .crisp-visual-masonry.density-large { column-count: 1; }
@@ -1164,4 +1206,16 @@
   text-decoration: underline;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .crisp-visual-container *,
+  .crisp-visual-inspector-overlay * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 
+  .crisp-visual-card:hover,
+  .crisp-visual-btn-pro:hover {
+    transform: none !important;
+  }
+}

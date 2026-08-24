@@ -1,6 +1,7 @@
 const { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, Setting, Menu, Modal, addIcon, requestUrl } = require('obsidian');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { execFile, exec } = require('child_process');
 
 const CRISP_VISUAL_VIEW_TYPE = 'crisp-visual-view';
@@ -559,6 +560,151 @@ function generateEagleId() {
   return result;
 }
 
+function resolveIngestFolders(folderId, folderMap) {
+  if (!folderId || folderId === 'all' || folderId === 'uncategorized') return [];
+  return folderMap && folderMap.has(folderId) ? [folderId] : [];
+}
+
+function upsertEagleItem(frontmatter, item) {
+  if (!frontmatter.eagle || typeof frontmatter.eagle !== 'object' || Array.isArray(frontmatter.eagle)) {
+    frontmatter.eagle = {};
+  }
+  if (!Array.isArray(frontmatter.eagle.items)) {
+    frontmatter.eagle.items = [];
+  }
+  if (frontmatter.eagle.items.some(existing => existing && existing.id === item.id)) {
+    return false;
+  }
+  frontmatter.eagle.items.push({
+    id: item.id,
+    name: item.name,
+    uri: item.eagleUri
+  });
+  return true;
+}
+
+async function createVaultFileIfMissing(vault, filePath, content) {
+  const existing = vault.getAbstractFileByPath(filePath);
+  if (existing) return { created: false, file: existing };
+  const file = await vault.create(filePath, content);
+  return { created: true, file };
+}
+
+function matchesRatioFilter(item, selectedRatio) {
+  if (selectedRatio === 'all') return true;
+  if (!item.width || !item.height) return selectedRatio === 'other';
+
+  const ratio = item.width / item.height;
+  if (selectedRatio === '1:1') return ratio >= 0.92 && ratio <= 1.08;
+  if (selectedRatio === '3:4') return ratio >= 0.68 && ratio <= 0.82;
+  if (selectedRatio === '4:3') return ratio >= 1.25 && ratio <= 1.45;
+  if (selectedRatio === '9:16') return ratio >= 0.50 && ratio <= 0.65;
+  if (selectedRatio === '16:9') return ratio >= 1.65 && ratio <= 1.95;
+  if (selectedRatio === 'banner') return ratio > 1.95;
+  if (selectedRatio === 'long') return ratio < 0.50;
+  if (selectedRatio === 'other') {
+    return !(
+      matchesRatioFilter(item, '1:1') ||
+      matchesRatioFilter(item, '3:4') ||
+      matchesRatioFilter(item, '4:3') ||
+      matchesRatioFilter(item, '9:16') ||
+      matchesRatioFilter(item, '16:9') ||
+      matchesRatioFilter(item, 'banner') ||
+      matchesRatioFilter(item, 'long')
+    );
+  }
+  return true;
+}
+
+function buildFileUrl(filePath) {
+  return pathToFileURL(filePath).href
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29');
+}
+
+function escapeMarkdownLabel(value) {
+  return String(value || '').replace(/([\\[\]])/g, '\\$1').replace(/[\r\n]+/g, ' ');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildInsertSyntax(item, mode) {
+  const fileUrl = buildFileUrl(item.filePath);
+  const label = escapeMarkdownLabel(item.name);
+  if (mode === 'standard_markdown') {
+    return `![${label}](${fileUrl})`;
+  }
+  if (mode === 'clickable_embed') {
+    return `[![${label}](${fileUrl})](${item.eagleUri})`;
+  }
+  return `[查看素材 → ${label}](${item.eagleUri})`;
+}
+
+function buildRawCardContent(item, now = new Date()) {
+  const day = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const cardId = `RAW-${day}-${item.id}`;
+  const displayTitle = String(item.name || '').replace(/[\r\n]+/g, ' ').trim();
+  const yaml = value => JSON.stringify(String(value ?? ''));
+  const fileUrl = buildFileUrl(item.filePath);
+
+  return `---
+id: ${yaml(cardId)}
+type: "raw"
+topic: "self-media"
+owner: "topic:self-media"
+title: ${yaml(item.name)}
+status: "inbox"
+source_type: "visual"
+source_url: ${yaml(item.url)}
+created_at: ${yaml(now.toISOString().slice(0, 16).replace('T', ' '))}
+routing_confidence: 1
+routing_reason: "Crisp Visual Ingest"
+eagle:
+  item_id: ${yaml(item.id)}
+  ext: ${yaml(item.ext)}
+  dimensions: ${yaml(`${item.width}x${item.height}`)}
+  size_bytes: ${Number(item.size) || 0}
+  star: ${Number(item.star) || 0}
+  uri: ${yaml(item.eagleUri)}
+---
+
+# 视觉素材卡片：${displayTitle}
+
+> 💡 **双向唤起**：点击下方图片可在 Eagle 中秒开定位。
+
+[![${escapeMarkdownLabel(item.name)}](${fileUrl})](${item.eagleUri})
+
+---
+
+## 视觉元数据
+- **素材 ID**：\`${item.id}\`
+- **规格尺寸**：\`${String(item.ext || '').toUpperCase()} (${item.width} × ${item.height}, ${(item.size / 1024).toFixed(1)} KB)\`
+- **主要色调**：\`${item.primaryHex} (${item.primaryColorGroup})\`
+- **星级评分**：\`${'★'.repeat(item.star || 0) || '未评分'}\`
+
+---
+
+## OCR 识别文案 (Recognized Text)
+\`\`\`text
+${item.ocrText || item.annotation || '（暂无提取文案）'}
+\`\`\`
+
+---
+
+## 观察与思考 (Observation & Context)
+- **视觉特征**：
+- **为什么收藏**：
+- **潜在应用场景**：
+`;
+}
+
 const FOLDER_COLOR_MAP = {
   blue: '#3b82f6',
   yellow: '#eab308',
@@ -779,14 +925,12 @@ class MediaScanner {
 
     const safeName = (name || `CAP-${new Date().toISOString().slice(0, 10)}-${Date.now().toString().slice(-4)}`).replace(/[\\/:*?"<>|]/g, '_');
     const mainFile = path.join(infoDir, `${safeName}.${ext}`);
-    const thumbFile = path.join(infoDir, `${safeName}_thumbnail.png`);
+    const thumbFile = path.join(infoDir, `${safeName}_thumbnail.${ext}`);
 
     fs.writeFileSync(mainFile, buffer);
     fs.writeFileSync(thumbFile, buffer);
 
-    const targetFolders = folderId && folderId !== 'all' && folderId !== 'uncategorized' 
-      ? [folderId] 
-      : ['MT1AJUK1N8Q0N'];
+    const targetFolders = resolveIngestFolders(folderId, this.folderMap);
 
     const dimensions = getImageDimensionsFromBuffer(buffer, ext);
 
@@ -911,17 +1055,26 @@ class CrispVisualView extends ItemView {
 
     // Listen for clipboard paste on container
     this.pasteHandler = (e) => this.handlePaste(e);
+    this.dragoverHandler = (e) => e.preventDefault();
+    this.dropHandler = (e) => this.handleDrop(e);
     this.containerEl.addEventListener('paste', this.pasteHandler);
-    
-    // Drag-in file support
-    this.containerEl.addEventListener('dragover', (e) => e.preventDefault());
-    this.containerEl.addEventListener('drop', (e) => this.handleDrop(e));
+    this.containerEl.addEventListener('dragover', this.dragoverHandler);
+    this.containerEl.addEventListener('drop', this.dropHandler);
   }
 
   async onClose() {
     this.watcher.stop();
+    if (this.inspectorCleanup) {
+      this.inspectorCleanup();
+    }
     if (this.pasteHandler) {
       this.containerEl.removeEventListener('paste', this.pasteHandler);
+    }
+    if (this.dragoverHandler) {
+      this.containerEl.removeEventListener('dragover', this.dragoverHandler);
+    }
+    if (this.dropHandler) {
+      this.containerEl.removeEventListener('drop', this.dropHandler);
     }
   }
 
@@ -984,6 +1137,9 @@ class CrispVisualView extends ItemView {
   }
 
   async refresh(isSilent = false) {
+    const previousScrollTop = isSilent && this.galleryContainer
+      ? this.galleryContainer.scrollTop
+      : 0;
     this.items = await this.scanner.scan();
     if (this.scanner.folders) {
       for (const f of this.scanner.folders) {
@@ -994,6 +1150,11 @@ class CrispVisualView extends ItemView {
     }
     this.applyFilters();
     this.render();
+    if (isSilent && previousScrollTop > 0) {
+      requestAnimationFrame(() => {
+        if (this.galleryContainer) this.galleryContainer.scrollTop = previousScrollTop;
+      });
+    }
   }
 
   applyFilters() {
@@ -1024,35 +1185,7 @@ class CrispVisualView extends ItemView {
       }
 
       // 4. Aspect Ratio Filter
-      if (this.selectedRatio !== 'all') {
-        const r = (item.width && item.height) ? (item.width / item.height) : 1;
-        if (this.selectedRatio === '1:1') {
-          if (r < 0.92 || r > 1.08) return false;
-        } else if (this.selectedRatio === '3:4') {
-          if (r < 0.68 || r > 0.82) return false;
-        } else if (this.selectedRatio === '4:3') {
-          if (r < 1.25 || r > 1.45) return false;
-        } else if (this.selectedRatio === '9:16') {
-          if (r < 0.50 || r > 0.65) return false;
-        } else if (this.selectedRatio === '16:9') {
-          if (r < 1.65 || r > 1.95) return false;
-        } else if (this.selectedRatio === 'banner') {
-          if (r < 1.95) return false;
-        } else if (this.selectedRatio === 'long') {
-          if (r >= 0.50) return false;
-        } else if (this.selectedRatio === 'other') {
-          const isStandard = (
-            (r >= 0.92 && r <= 1.08) ||
-            (r >= 0.68 && r <= 0.82) ||
-            (r >= 1.25 && r <= 1.45) ||
-            (r >= 0.50 && r <= 0.65) ||
-            (r >= 1.65 && r <= 1.95) ||
-            (r >= 1.95) ||
-            (r < 0.50)
-          );
-          if (isStandard) return false;
-        }
-      }
+      if (!matchesRatioFilter(item, this.selectedRatio)) return false;
 
       // 5. Star Rating Filter
       if (this.selectedStar !== 'all') {
@@ -1085,6 +1218,46 @@ class CrispVisualView extends ItemView {
       this.filteredItems = result;
       this.isFreeCapped = false;
     }
+  }
+
+  resetFilters() {
+    this.searchQuery = '';
+    this.selectedColor = 'all';
+    this.selectedFormat = 'all';
+    this.selectedRatio = 'all';
+    this.selectedStar = 'all';
+    this.selectedFolderId = 'all';
+    this.selectedTag = null;
+    this.applyFilters();
+    this.render();
+  }
+
+  renderColorFilter(container) {
+    const select = container.createEl('select', {
+      cls: 'crisp-visual-format-select',
+      title: '按主色调筛选'
+    });
+    [
+      ['all', '全部颜色'],
+      ['red', '红色'],
+      ['orange', '橙色'],
+      ['yellow', '黄色'],
+      ['green', '绿色'],
+      ['cyan', '青色'],
+      ['blue', '蓝色'],
+      ['purple', '紫色'],
+      ['dark', '深色'],
+      ['light', '浅色'],
+      ['gray', '灰色']
+    ].forEach(([value, text]) => {
+      const option = select.createEl('option', { value, text });
+      if (this.selectedColor === value) option.selected = true;
+    });
+    select.addEventListener('change', event => {
+      this.selectedColor = event.target.value;
+      this.applyFilters();
+      this.renderGalleryOnly();
+    });
   }
 
   render() {
@@ -1171,7 +1344,10 @@ class CrispVisualView extends ItemView {
       new Notice('🎲 已开启视觉灵感随机漫游！');
     });
 
-    // 4. Aspect Ratio Selector
+    // 4. Color Selector
+    this.renderColorFilter(rightHeader);
+
+    // 5. Aspect Ratio Selector
     const ratioSelect = rightHeader.createEl('select', { cls: 'crisp-visual-format-select' });
     [
       { id: 'all', text: '全部比例' },
@@ -1193,7 +1369,7 @@ class CrispVisualView extends ItemView {
       this.renderGalleryOnly();
     });
 
-    // 5. Star Rating Selector
+    // 6. Star Rating Selector
     const starSelect = rightHeader.createEl('select', { cls: 'crisp-visual-format-select' });
     [
       { id: 'all', text: '★ 全部星级' },
@@ -1210,7 +1386,7 @@ class CrispVisualView extends ItemView {
       this.renderGalleryOnly();
     });
 
-    // 6. Format Selector
+    // 7. Format Selector
     const formatSelect = rightHeader.createEl('select', { cls: 'crisp-visual-format-select' });
     ['all', 'gif', 'png', 'jpg', 'svg', 'webp'].forEach(fmt => {
       const opt = formatSelect.createEl('option', { value: fmt, text: fmt.toUpperCase() });
@@ -1426,7 +1602,7 @@ class CrispVisualView extends ItemView {
             cls: `crisp-visual-tree-row ${this.selectedTag === tag ? 'active' : ''}`
           });
           const left = tagRow.createDiv({ cls: 'crisp-visual-tree-left' });
-          left.innerHTML = `<span class="crisp-visual-tag-hash">#</span><span class="crisp-visual-folder-name">${tag}</span>`;
+          left.innerHTML = `<span class="crisp-visual-tag-hash">#</span><span class="crisp-visual-folder-name">${escapeHtml(tag)}</span>`;
           const countEl = tagRow.createDiv({ cls: 'crisp-visual-nav-item-count' });
           countEl.setText(String(count));
           
@@ -1484,6 +1660,22 @@ class CrispVisualView extends ItemView {
         <div style="font-weight: 500; font-size: 14px;">没有找到符合条件的视觉素材</div>
         <div style="font-size: 12px; color: var(--text-muted);">尝试调整筛选条件、星级评分，或按 Cmd+V 粘贴新素材</div>
       `;
+      const hasActiveFilters = Boolean(
+        this.searchQuery ||
+        this.selectedColor !== 'all' ||
+        this.selectedFormat !== 'all' ||
+        this.selectedRatio !== 'all' ||
+        this.selectedStar !== 'all' ||
+        this.selectedFolderId !== 'all' ||
+        this.selectedTag
+      );
+      if (hasActiveFilters) {
+        const resetBtn = empty.createEl('button', {
+          cls: 'crisp-visual-btn crisp-visual-btn-accent',
+          text: '清除全部筛选'
+        });
+        resetBtn.addEventListener('click', () => this.resetFilters());
+      }
       return;
     }
 
@@ -1543,6 +1735,8 @@ class CrispVisualView extends ItemView {
       const imgWrap = card.createDiv({ cls: 'crisp-visual-img-wrap' });
       const img = imgWrap.createEl('img', { cls: 'crisp-visual-img' });
       img.alt = item.name;
+      img.loading = 'lazy';
+      img.decoding = 'async';
 
       attachImageSrc(img, item.thumbnailPath || item.filePath, item.ext);
 
@@ -1587,16 +1781,7 @@ class CrispVisualView extends ItemView {
   }
 
   generateInsertSyntax(item) {
-    const encodedPath = encodeURI(item.filePath);
-    const mode = this.plugin.settings.insertFormat;
-
-    if (mode === 'standard_markdown') {
-      return `![${item.name}](file://${encodedPath})`;
-    } else if (mode === 'clickable_embed') {
-      return `[![${item.name}](file://${encodedPath})](${item.eagleUri})`;
-    } else {
-      return `[查看素材 → ${item.name}](${item.eagleUri})`;
-    }
+    return buildInsertSyntax(item, this.plugin.settings.insertFormat);
   }
 
   insertToActiveNote(item) {
@@ -1697,21 +1882,16 @@ class CrispVisualView extends ItemView {
     }
 
     try {
-      const content = await this.app.vault.read(activeFile);
-      const syntax = this.generateInsertSyntax(item);
-      const updatedContent = content.replace(/^---\n([\s\S]*?)\n---/, (match, fm) => {
-        if (!fm.includes('eagle:')) {
-          return `---\n${fm}\neagle:\n  items:\n    - id: "${item.id}"\n      name: "${item.name}"\n      uri: "${item.eagleUri}"\n---`;
-        } else {
-          return match;
-        }
+      let added = false;
+      await this.app.fileManager.processFrontMatter(activeFile, frontmatter => {
+        added = upsertEagleItem(frontmatter, item);
       });
 
-      if (updatedContent !== content) {
-        await this.app.vault.modify(activeFile, updatedContent);
+      if (added) {
+        new Notice(`已将素材绑定到选题《${activeFile.basename}》`);
+      } else {
+        new Notice(`该素材已绑定到选题《${activeFile.basename}》`);
       }
-
-      new Notice(`已成功将素材绑定到选题《${activeFile.basename}》！`);
     } catch (e) {
       new Notice(`绑定选题失败: ${e.message}`);
     }
@@ -1726,79 +1906,25 @@ class CrispVisualView extends ItemView {
 
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const cardId = `RAW-${today}-${item.id}`;
-    const cardTitle = item.name;
     const destRel = `Topics/self-media/raw/inbox/${cardId}.md`;
     
-    const vaultPath = this.app.vault.adapter.getBasePath ? this.app.vault.adapter.getBasePath() : '';
-    const fullPath = path.join(vaultPath, destRel);
-
-    const content = `---
-id: "${cardId}"
-type: "raw"
-topic: "self-media"
-owner: "topic:self-media"
-title: "${cardTitle}"
-status: "inbox"
-source_type: "visual"
-source_url: "${item.url || ''}"
-created_at: "${new Date().toISOString().slice(0, 16).replace('T', ' ')}"
-routing_confidence: 1
-routing_reason: "Crisp Visual Ingest"
-eagle:
-  item_id: "${item.id}"
-  ext: "${item.ext}"
-  dimensions: "${item.width}x${item.height}"
-  size_bytes: ${item.size}
-  star: ${item.star || 0}
-  uri: "${item.eagleUri}"
----
-
-# 视觉素材卡片：${cardTitle}
-
-> 💡 **双向唤起**：点击下方图片可在 Eagle 中秒开定位。
-
-[![${cardTitle}](file://${encodeURI(item.filePath)})](${item.eagleUri})
-
----
-
-## 视觉元数据
-- **素材 ID**：\`${item.id}\`
-- **规格尺寸**：\`${item.ext.toUpperCase()} (${item.width} × ${item.height}, ${(item.size / 1024).toFixed(1)} KB)\`
-- **主要色调**：\`${item.primaryHex} (${item.primaryColorGroup})\`
-- **星级评分**：\`${'★'.repeat(item.star || 0) || '未评分'}\`
-
----
-
-## OCR 识别文案 (Recognized Text)
-\`\`\`text
-${item.ocrText || item.annotation || '（暂无提取文案）'}
-\`\`\`
-
----
-
-## 观察与思考 (Observation & Context)
-- **视觉特征**：
-- **为什么收藏**：
-- **潜在应用场景**：
-`;
+    const content = buildRawCardContent(item);
 
     try {
-      if (!fs.existsSync(path.dirname(fullPath))) {
-        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      }
-      fs.writeFileSync(fullPath, content, 'utf-8');
-      new Notice(`🎉 已成功创建 ANKS 认知卡片：${cardId}.md`);
-      
-      const tfile = this.app.vault.getAbstractFileByPath(destRel);
-      if (tfile) {
-        this.app.workspace.getLeaf(true).openFile(tfile);
-      }
+      const result = await createVaultFileIfMissing(this.app.vault, destRel, content);
+      new Notice(result.created
+        ? `🎉 已成功创建 ANKS 认知卡片：${cardId}.md`
+        : `认知卡片已存在，未覆盖原文件：${cardId}.md`);
+      await this.app.workspace.getLeaf(true).openFile(result.file);
     } catch (err) {
       new Notice(`❌ 生成卡片失败: ${err.message}`);
     }
   }
 
   openInspector(initialItem) {
+    if (this.inspectorCleanup) {
+      this.inspectorCleanup();
+    }
     let currentItem = initialItem;
     const overlay = document.body.createDiv({ cls: 'crisp-visual-inspector-overlay' });
 
@@ -1823,6 +1949,9 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
     const closeInspector = () => {
       window.removeEventListener('keydown', handleKey);
       overlay.remove();
+      if (this.inspectorCleanup === closeInspector) {
+        this.inspectorCleanup = null;
+      }
     };
 
     overlay.addEventListener('click', (e) => {
@@ -1836,7 +1965,7 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
       // Header
       const header = card.createDiv({ cls: 'crisp-visual-inspector-header' });
       const titleBadge = header.createDiv({ cls: 'crisp-visual-title-badge' });
-      titleBadge.innerHTML = `${ICON_INSPECTOR_HEADER}<span>${item.name}</span>`;
+      titleBadge.innerHTML = `${ICON_INSPECTOR_HEADER}<span>${escapeHtml(item.name)}</span>`;
 
       const closeBtn = header.createEl('button', { cls: 'crisp-visual-btn', text: '✕ 关闭' });
       closeBtn.addEventListener('click', () => closeInspector());
@@ -1995,6 +2124,7 @@ ${item.ocrText || item.annotation || '（暂无提取文案）'}
     };
 
     window.addEventListener('keydown', handleKey);
+    this.inspectorCleanup = closeInspector;
 
     renderInspectorContent(initialItem);
   }
@@ -2150,7 +2280,7 @@ class CrispVisualSettingTab extends PluginSettingTab {
 /**
  * Main Plugin Entry
  */
-module.exports = class CrispVisualPlugin extends Plugin {
+class CrispVisualPlugin extends Plugin {
   async onload() {
     console.log('[Crisp Visual] Loading plugin v0.2.0...');
     await this.loadSettings();
@@ -2241,4 +2371,17 @@ module.exports = class CrispVisualPlugin extends Plugin {
 
     workspace.revealLeaf(leaf);
   }
-};
+}
+
+CrispVisualPlugin.logic = Object.freeze({
+  resolveIngestFolders,
+  upsertEagleItem,
+  createVaultFileIfMissing,
+  matchesRatioFilter,
+  buildInsertSyntax,
+  buildRawCardContent,
+  escapeHtml
+});
+CrispVisualPlugin.classes = Object.freeze({ CrispVisualView });
+
+module.exports = CrispVisualPlugin;
