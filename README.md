@@ -67,7 +67,7 @@ Part of the **Crisp Series** for Obsidian by [letschips](https://github.com/lets
 ## 🔒 Privacy & Software Policy
 
 - **100% Local-First**: All image scanning, indexing, thumbnail loading, and OCR processing run entirely on your local machine. No images, notes, or prompts are ever uploaded to any cloud server.
-- **Zero Cloud Leakage**: Only cryptographic license verification communicates with Cloudflare for device limit validation (`https://crisp-license.helloherve-xsn.workers.dev/api/verify-device`), with seamless offline fallback support.
+- **Zero Cloud Leakage**: Only cryptographic license verification communicates with Cloudflare for device limit validation (`https://license.letschips.xyz/api/verify-device`), with seamless offline fallback support.
 
 ---
 
