@@ -365,3 +365,55 @@ test('activating Crisp Visual never repaints the Obsidian file sidebar', () => {
   assert.doesNotMatch(styles, /\.workspace-split\.mod-left-split/);
   assert.match(styles, /\.crisp-visual-sidebar/);
 });
+
+test('normalizeEaglePath unescapes terminal-escaped spaces, tildes, and quotes', () => {
+  const { normalizeEaglePath } = CrispVisualPlugin.logic;
+
+  // Exact customer path pattern
+  const customerPath = '/Users/rainnong/Library/Mobile\\ Documents/com\\~apple\\~CloudDocs/sparrow.library/images';
+  assert.equal(
+    normalizeEaglePath(customerPath),
+    '/Users/rainnong/Library/Mobile Documents/com~apple~CloudDocs/sparrow.library/images'
+  );
+
+  // Quoted paths
+  assert.equal(
+    normalizeEaglePath('"/Users/rainnong/Library/Mobile Documents/sparrow.library/images"'),
+    '/Users/rainnong/Library/Mobile Documents/sparrow.library/images'
+  );
+  assert.equal(
+    normalizeEaglePath('\'/Users/rainnong/Library/Mobile Documents/sparrow.library/images\''),
+    '/Users/rainnong/Library/Mobile Documents/sparrow.library/images'
+  );
+
+  // Trailing slashes
+  assert.equal(
+    normalizeEaglePath('/Users/rainnong/Library/Mobile Documents/sparrow.library/images/'),
+    '/Users/rainnong/Library/Mobile Documents/sparrow.library/images'
+  );
+
+  // Blank / invalid
+  assert.equal(normalizeEaglePath(''), '');
+  assert.equal(normalizeEaglePath(null), '');
+});
+
+test('normalizeEaglePath auto-completes to images subfolder if given a .library directory', () => {
+  const { normalizeEaglePath } = CrispVisualPlugin.logic;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eagle-test-'));
+  const libDir = path.join(tempDir, 'sample.library');
+  const imagesDir = path.join(libDir, 'images');
+
+  fs.mkdirSync(imagesDir, { recursive: true });
+
+  try {
+    // Giving library root should resolve to images subfolder
+    assert.equal(normalizeEaglePath(libDir), imagesDir);
+    // Giving images subfolder directly should stay untouched
+    assert.equal(normalizeEaglePath(imagesDir), imagesDir);
+    // Giving library root with backslash escape in path
+    const escapedLibDir = libDir.replace(/ /g, '\\ ');
+    assert.equal(normalizeEaglePath(escapedLibDir), imagesDir);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});

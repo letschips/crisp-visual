@@ -353,6 +353,52 @@ function discoverEagleLibraryPath(app) {
 }
 
 /**
+ * Normalize and sanitize user-provided or stored Eagle Library paths.
+ * Handles terminal escapes (\ , \~), surrounding quotes, tilde expansion,
+ * and auto-completes to the /images subfolder if user provided a .library root.
+ */
+function normalizeEaglePath(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let p = raw.trim();
+  p = p.replace(/^["'\u201c\u201d\u2018\u2019]|["'\u201c\u201d\u2018\u2019]$/g, '').trim();
+
+  // POSIX / shell escape unescaping
+  if (p.startsWith('/') || p.startsWith('~')) {
+    p = p.replace(/\\([ ~"'\(\)\[\]#&;$!*?<>|])/g, '$1');
+  } else {
+    p = p.replace(/\\([ ~])/g, '$1');
+  }
+
+  // Expand tilde
+  if (p.startsWith('~/') || p === '~') {
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    if (home) {
+      p = path.join(home, p.slice(1));
+    }
+  }
+
+  // Remove trailing slashes (except root)
+  if (p.length > 1 && (p.endsWith('/') || p.endsWith('\\'))) {
+    p = p.slice(0, -1);
+  }
+
+  // Auto-complete to /images if user pointed to .library root
+  try {
+    if (fs.existsSync(p)) {
+      const stat = fs.statSync(p);
+      if (stat.isDirectory()) {
+        const candidateImages = path.join(p, 'images');
+        if (fs.existsSync(candidateImages) && path.basename(p) !== 'images') {
+          p = candidateImages;
+        }
+      }
+    }
+  } catch (e) {}
+
+  return p;
+}
+
+/**
  * Robust MIME type detection by in-memory magic bytes & extension
  */
 function getMimeType(buffer, ext) {
@@ -730,7 +776,7 @@ class MediaScanner {
   }
 
   async scan() {
-    const rootPath = this.plugin.settings.mediaRoot;
+    const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
     this.items = [];
     this.folders = [];
     this.folderMap.clear();
@@ -921,7 +967,7 @@ class MediaScanner {
   }
 
   async ingestBuffer(buffer, name, folderId = null, ext = 'png') {
-    const rootPath = this.plugin.settings.mediaRoot;
+    const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
     const id = generateEagleId();
     const infoDir = path.join(rootPath, `${id}.info`);
     fs.mkdirSync(infoDir, { recursive: true });
@@ -976,7 +1022,7 @@ class LibraryWatcher {
 
   start() {
     this.stop();
-    const rootPath = this.plugin.settings.mediaRoot;
+    const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
     if (!fs.existsSync(rootPath)) return;
 
     const trigger = () => {
@@ -1632,7 +1678,8 @@ class CrispVisualView extends ItemView {
   }
 
   renderMasonry() {
-    if (!this.plugin.settings.mediaRoot || !fs.existsSync(this.plugin.settings.mediaRoot)) {
+    const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
+    if (!rootPath || !fs.existsSync(rootPath)) {
       const empty = this.galleryContainer.createDiv({ cls: 'crisp-visual-empty-state' });
       empty.innerHTML = `
         <div class="crisp-visual-empty-icon">${ICON_ALL_ASSETS}</div>
@@ -2242,13 +2289,20 @@ class CrispVisualSettingTab extends PluginSettingTab {
       .setName('外部媒体库路径 (Media Root Path)')
       .setDesc('指定外部 Eagle 资源库的 images 目录（例如 ANKS.library/images，不占用 iCloud 同步空间）');
 
-    mediaSetting.addText(text => text
-      .setPlaceholder('/path/to/YourLibrary.library/images')
-      .setValue(this.plugin.settings.mediaRoot)
-      .onChange(async (val) => {
-        this.plugin.settings.mediaRoot = val.trim();
-        await this.plugin.saveSettings();
-      }));
+    mediaSetting.addText(text => {
+      text
+        .setPlaceholder('/path/to/YourLibrary.library/images')
+        .setValue(this.plugin.settings.mediaRoot)
+        .onChange(async (val) => {
+          this.plugin.settings.mediaRoot = normalizeEaglePath(val);
+          await this.plugin.saveSettings();
+        });
+      if (text.inputEl && typeof text.inputEl.addEventListener === 'function') {
+        text.inputEl.addEventListener('blur', () => {
+          text.setValue(this.plugin.settings.mediaRoot);
+        });
+      }
+    });
 
     mediaSetting.addButton(btn => btn
       .setButtonText('自动探测')
@@ -2347,7 +2401,9 @@ class CrispVisualPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    if (!this.settings.mediaRoot) {
+    if (this.settings.mediaRoot) {
+      this.settings.mediaRoot = normalizeEaglePath(this.settings.mediaRoot);
+    } else {
       const autoDiscovered = discoverEagleLibraryPath(this.app);
       if (autoDiscovered) {
         this.settings.mediaRoot = autoDiscovered;
@@ -2377,6 +2433,7 @@ class CrispVisualPlugin extends Plugin {
 }
 
 CrispVisualPlugin.logic = Object.freeze({
+  normalizeEaglePath,
   resolveIngestFolders,
   upsertEagleItem,
   createVaultFileIfMissing,
