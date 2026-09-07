@@ -73,4 +73,4 @@ Part of the **Crisp Series** for Obsidian by [letschips](https://github.com/lets
 
 ## 📄 License
 
-[MIT License](LICENSE) © 2026 [letschips](https://github.com/letschips)
+[Crisp Proprietary License](LICENSE) © 2026 [letschips](https://github.com/letschips)
