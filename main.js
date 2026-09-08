@@ -98,7 +98,7 @@ function discoverVaultCrispLicense(app) {
   return null;
 }
 
-async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-visual", app = null, windowObj = window) {
+async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-visual", app = null, windowObj = window, options = {}) {
   const trimmed = (licenseCode || "").trim();
   if (!trimmed) return { valid: false, reason: "授权码为空" };
   const parts = trimmed.split(".");
@@ -134,6 +134,7 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-visual", a
       new TextEncoder().encode(payloadBase64)
     );
     if (!isValid) return { valid: false, reason: "授权签名无效" };
+    if (options.skipOnline) return { valid: true, payload, source: "offline" };
 
     try {
       const deviceId = app?.appId || (app?.vault?.getName ? "vault-" + encodeURIComponent(app.vault.getName()) : "device-default");
@@ -198,19 +199,8 @@ class CrispVisualLicenseManager {
     this.plugin = plugin;
     this.status = { valid: false, reason: "尚未验证" };
     
-    // Quick offline pre-check & auto-inherit from active Crisp Suite
-    const code = this.plugin.settings?.licenseCode || discoverVaultCrispLicense(this.app);
-    if (code && typeof code === 'string' && code.includes('.')) {
-      try {
-        const payloadBase64 = code.split('.')[0];
-        const payloadJson = new TextDecoder().decode(base64UrlToUint8Array(payloadBase64));
-        const payload = JSON.parse(payloadJson);
-        if (CRISP_LICENSE_PRODUCTS.includes(payload.product)) {
-          this.status = { valid: true, payload, message: "本地验证成功", source: "offline" };
-          this.plugin.settings.licenseCode = code;
-        }
-      } catch (e) {}
-    }
+    this.verificationId = 0;
+    this.backgroundVerification = null;
   }
 
   isEntitled() {
@@ -221,14 +211,43 @@ class CrispVisualLicenseManager {
     return this.status;
   }
 
+  async initialize() {
+    const id = ++this.verificationId;
+    const code = this.plugin.settings?.licenseCode || discoverVaultCrispLicense(this.app) || "";
+    const result = await verifyLicenseCode(code, "crisp-visual", this.app, window, { skipOnline: true });
+    if (id !== this.verificationId) return { valid: false, reason: "授权校验已被更新" };
+    this.status = result;
+    if (result.valid) {
+      this.plugin.settings.licenseCode = code;
+      this.backgroundVerification = this.verify(code);
+    }
+    return result;
+  }
+
+  clear() {
+    ++this.verificationId;
+    this.status = { valid: false, reason: "已手动清除激活" };
+    this.renderLicenseState();
+  }
+
+  renderLicenseState() {
+    for (const leaf of this.app.workspace.getLeavesOfType(CRISP_VISUAL_VIEW_TYPE)) {
+      leaf.view.render();
+    }
+  }
+
   async verify(code = this.plugin.settings?.licenseCode) {
+    const id = ++this.verificationId;
+    const wasEntitled = this.isEntitled();
     let targetCode = (code || "").trim();
     if (!targetCode) {
       const discovered = discoverVaultCrispLicense(this.app);
       if (discovered) targetCode = discovered;
     }
     const result = await verifyLicenseCode(targetCode, "crisp-visual", this.app);
+    if (id !== this.verificationId) return { valid: false, reason: "授权校验已被更新" };
     this.status = result;
+    if (wasEntitled && !result.valid) this.renderLicenseState();
     if (result.valid) {
       this.plugin.settings.licenseCode = targetCode;
       if (result.source === "online") {
@@ -2263,7 +2282,7 @@ class CrispVisualSettingTab extends PluginSettingTab {
         .setWarning()
         .onClick(async () => {
           this.plugin.settings.licenseCode = '';
-          this.plugin.licenseManager.status = { valid: false, reason: "已手动清除激活" };
+          this.plugin.licenseManager.clear();
           this.licenseDraft = '';
           await this.plugin.saveSettings();
           new Notice('已清除当前插件激活信息');
@@ -2368,7 +2387,7 @@ class CrispVisualPlugin extends Plugin {
 
     // Initialize License Manager & Auto-inherit from Crisp Suite
     this.licenseManager = new CrispVisualLicenseManager(this.app, this);
-    this.licenseManager.verify().catch(() => {});
+    await this.licenseManager.initialize();
 
     try {
       addIcon('crisp-visual-icon', CRISP_VISUAL_SVG);
