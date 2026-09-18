@@ -417,3 +417,67 @@ test('normalizeEaglePath auto-completes to images subfolder if given a .library 
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('MediaScanner ignores .DS_Store and hidden files in Eagle items', async () => {
+  const { MediaScanner } = CrispVisualPlugin.classes;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eagle-scanner-test-'));
+  const imagesDir = path.join(tempDir, 'sample.library', 'images');
+  const infoDir = path.join(imagesDir, 'ITEM123.info');
+
+  fs.mkdirSync(infoDir, { recursive: true });
+
+  // Create .DS_Store (hidden), metadata.json, and the real image
+  fs.writeFileSync(path.join(infoDir, '.DS_Store'), 'bogus ds_store content');
+  fs.writeFileSync(path.join(infoDir, 'metadata.json'), JSON.stringify({
+    id: 'ITEM123',
+    name: 'Real Image',
+    ext: 'png',
+    size: 100,
+    mtime: Date.now()
+  }));
+  fs.writeFileSync(path.join(infoDir, 'Real Image.png'), 'fake-image-bytes');
+
+  try {
+    const mockPlugin = {
+      settings: { mediaRoot: imagesDir }
+    };
+    const scanner = new MediaScanner(mockPlugin);
+    const items = await scanner.scan();
+
+    assert.equal(items.length, 1);
+    assert.equal(items[0].id, 'ITEM123');
+    assert.equal(path.basename(items[0].filePath), 'Real Image.png');
+    assert.notEqual(path.basename(items[0].filePath), '.DS_Store');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('refreshOpenViews triggers refresh and watcher.start on open views', () => {
+  let refreshed = false;
+  let watcherStarted = false;
+
+  const mockApp = {
+    workspace: {
+      getLeavesOfType(type) {
+        if (type === 'crisp-visual-view') {
+          return [{
+            view: {
+              refresh() { refreshed = true; },
+              watcher: { start() { watcherStarted = true; } }
+            }
+          }];
+        }
+        return [];
+      }
+    }
+  };
+
+  const plugin = new CrispVisualPlugin();
+  plugin.app = mockApp;
+  plugin.refreshOpenViews();
+
+  assert.equal(refreshed, true);
+  assert.equal(watcherStarted, true);
+});
+

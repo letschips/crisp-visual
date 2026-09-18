@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.7] - 2026-09-18
+
+### Improved
+- 优化体验。
+
 ## [0.2.6] - 2026-09-12
 
 ### Security & Stability

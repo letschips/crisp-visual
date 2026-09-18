@@ -871,6 +871,7 @@ class MediaScanner {
 
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.')) continue;
 
         if (entry.name.endsWith('.info')) {
           // Eagle Item structure: <id>.info
@@ -885,6 +886,7 @@ class MediaScanner {
             let mainFile = null;
             let thumbFile = null;
             for (const f of files) {
+              if (f.startsWith('.')) continue;
               if (f === 'metadata.json') continue;
               if (f.includes('_thumbnail.')) thumbFile = path.join(infoDir, f);
               else if (!mainFile) mainFile = path.join(infoDir, f);
@@ -1731,7 +1733,8 @@ class CrispVisualView extends ItemView {
           当前尚未绑定 Eagle 素材库路径。你可以点击下方按钮一键自动探测，或前往插件设置手动配置。
         </div>
       `;
-      const detectBtn = empty.createEl('button', { cls: 'crisp-visual-btn crisp-visual-btn-accent', text: '🔍 一键自动探测 Eagle 素材库' });
+      const actionsEl = empty.createDiv({ style: 'display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;' });
+      const detectBtn = actionsEl.createEl('button', { cls: 'crisp-visual-btn crisp-visual-btn-accent', text: '🔍 一键自动探测 Eagle 素材库' });
       detectBtn.addEventListener('click', async () => {
         const found = discoverEagleLibraryPath(this.app);
         if (found) {
@@ -1742,6 +1745,11 @@ class CrispVisualView extends ItemView {
         } else {
           new Notice('ℹ️ 未能自动发现 .library 目录，请前往设置面板手动配置路径');
         }
+      });
+      const refreshBtn = actionsEl.createEl('button', { cls: 'crisp-visual-btn', text: '🔄 刷新 / 重新检测' });
+      refreshBtn.addEventListener('click', async () => {
+        new Notice('🔄 正在重新检测 Eagle 素材库...');
+        await this.refresh();
       });
       return;
     }
@@ -2330,7 +2338,60 @@ class CrispVisualSettingTab extends PluginSettingTab {
 
     const mediaSetting = new Setting(containerEl)
       .setName('外部媒体库路径 (Media Root Path)')
-      .setDesc('指定外部 Eagle 资源库的 images 目录（例如 ANKS.library/images，不占用 iCloud 同步空间）');
+      .setDesc('指定外部 Eagle 资源库的 images 目录或 .library 根目录（不占用 iCloud 同步空间，支持本地任意磁盘路径）');
+
+    const statusEl = containerEl.createDiv({ cls: 'crisp-visual-path-status' });
+    statusEl.style.fontSize = '12px';
+    statusEl.style.margin = '-6px 0 16px 0';
+    statusEl.style.padding = '6px 12px';
+    statusEl.style.borderRadius = '6px';
+    statusEl.style.lineHeight = '1.5';
+
+    const updateStatus = (rawVal) => {
+      const p = normalizeEaglePath(rawVal || '');
+      if (!p) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--text-muted)';
+        statusEl.style.background = 'var(--background-secondary)';
+        statusEl.textContent = 'ℹ️ 未配置路径。可直接粘贴本地 Eagle 资源库（.library）或其 images 目录的绝对路径，或点击「自动探测」。';
+        return;
+      }
+      try {
+        if (!fs.existsSync(p)) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = 'var(--text-error, #e53935)';
+          statusEl.style.background = 'var(--background-modifier-error, rgba(229, 57, 53, 0.1))';
+          statusEl.textContent = `❌ 路径在本地磁盘上不存在：${p}（请检查是否包含空格、漏写上级目录或缺少访问权限）`;
+          return;
+        }
+        const stat = fs.statSync(p);
+        if (!stat.isDirectory()) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = 'var(--text-error, #e53935)';
+          statusEl.style.background = 'var(--background-modifier-error, rgba(229, 57, 53, 0.1))';
+          statusEl.textContent = `❌ 该路径不是文件夹：${p}`;
+          return;
+        }
+
+        const entries = fs.readdirSync(p, { withFileTypes: true });
+        const infoCount = entries.filter(e => e.isDirectory() && e.name.endsWith('.info')).length;
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--text-success, #43a047)';
+        statusEl.style.background = 'var(--background-modifier-success, rgba(67, 160, 71, 0.1))';
+        if (infoCount > 0) {
+          statusEl.textContent = `✅ 路径有效，已成功识别 Eagle 素材库（检测到 ${infoCount} 项素材，画廊已联动刷新）`;
+        } else {
+          statusEl.textContent = `⚠️ 路径存在，但该目录下未检测到 .info 素材包（请确认是否指向正确的 .library/images 目录）`;
+        }
+      } catch (e) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--text-error, #e53935)';
+        statusEl.style.background = 'var(--background-modifier-error, rgba(229, 57, 53, 0.1))';
+        statusEl.textContent = `❌ 读取路径出错: ${e.message}`;
+      }
+    };
+
+    updateStatus(this.plugin.settings.mediaRoot);
 
     mediaSetting.addText(text => {
       text
@@ -2339,10 +2400,16 @@ class CrispVisualSettingTab extends PluginSettingTab {
         .onChange(async (val) => {
           this.plugin.settings.mediaRoot = normalizeEaglePath(val);
           await this.plugin.saveSettings();
+          updateStatus(this.plugin.settings.mediaRoot);
+          this.plugin.refreshOpenViews();
         });
       if (text.inputEl && typeof text.inputEl.addEventListener === 'function') {
+        text.inputEl.addEventListener('input', (e) => {
+          updateStatus(e.target.value);
+        });
         text.inputEl.addEventListener('blur', () => {
           text.setValue(this.plugin.settings.mediaRoot);
+          updateStatus(this.plugin.settings.mediaRoot);
         });
       }
     });
@@ -2355,6 +2422,8 @@ class CrispVisualSettingTab extends PluginSettingTab {
         if (found) {
           this.plugin.settings.mediaRoot = found;
           await this.plugin.saveSettings();
+          updateStatus(found);
+          this.plugin.refreshOpenViews();
           new Notice(`已成功探测并绑定素材库：${path.basename(path.dirname(found))}`);
           this.display();
         } else {
@@ -2458,6 +2527,24 @@ class CrispVisualPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  refreshOpenViews() {
+    try {
+      const leaves = this.app?.workspace?.getLeavesOfType ? this.app.workspace.getLeavesOfType(CRISP_VISUAL_VIEW_TYPE) : [];
+      for (const leaf of leaves) {
+        if (leaf.view) {
+          if (typeof leaf.view.refresh === 'function') {
+            leaf.view.refresh();
+          }
+          if (leaf.view.watcher && typeof leaf.view.watcher.start === 'function') {
+            leaf.view.watcher.start();
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Crisp Visual] Failed to refresh open views:', e);
+    }
+  }
+
   async activateView() {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(CRISP_VISUAL_VIEW_TYPE)[0];
@@ -2469,6 +2556,10 @@ class CrispVisualPlugin extends Plugin {
         type: CRISP_VISUAL_VIEW_TYPE,
         active: true
       });
+    } else {
+      if (leaf.view && typeof leaf.view.refresh === 'function' && (!leaf.view.items || leaf.view.items.length === 0)) {
+        leaf.view.refresh();
+      }
     }
 
     workspace.revealLeaf(leaf);
@@ -2485,6 +2576,6 @@ CrispVisualPlugin.logic = Object.freeze({
   buildRawCardContent,
   escapeHtml
 });
-CrispVisualPlugin.classes = Object.freeze({ CrispVisualView });
+CrispVisualPlugin.classes = Object.freeze({ CrispVisualView, MediaScanner });
 
 module.exports = CrispVisualPlugin;
