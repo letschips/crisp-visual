@@ -86,37 +86,48 @@ async function importEd25519PublicKey(pem, windowObj = window) {
   );
 }
 
-function discoverVaultCrispLicense(app) {
-  if (!app) return null;
-  // 1. Check in-memory active plugins
-  const crispPlugins = ['crisp-focus', 'crisp-file-explorer', 'crisp-base', 'crisp-recall', 'crisp-annotations', 'crisp-reading-rail', 'crisp-asr', 'crisp-dsh'];
-  for (const pid of crispPlugins) {
-    const p = app.plugins?.plugins?.[pid];
-    if (p?.settings?.licenseCode && typeof p.settings.licenseCode === 'string' && p.settings.licenseCode.includes('.')) {
-      return p.settings.licenseCode.trim();
-    }
+// 库内其它 Crisp 插件保存的授权码，按「已加载插件 → 磁盘 data.json」顺序去重收集。
+function collectVaultCrispLicenseCandidates(app) {
+  if (!app) return [];
+  const seen = new Set();
+  const candidates = [];
+  const add = (code) => {
+    if (typeof code !== 'string') return;
+    const trimmed = code.trim();
+    if (!trimmed.includes('.') || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    candidates.push(trimmed);
+  };
+  for (const [pid, instance] of Object.entries(app.plugins?.plugins || {})) {
+    if (pid.startsWith('crisp-') && pid !== 'crisp-visual') add(instance?.settings?.licenseCode);
   }
-  // 2. Check plugin data.json files on disk
   try {
     const basePath = app.vault?.adapter?.basePath || (app.vault?.adapter?.getBasePath ? app.vault.adapter.getBasePath() : '');
     const pluginsDir = basePath ? path.join(basePath, '.obsidian', 'plugins') : '';
     if (pluginsDir && fs.existsSync(pluginsDir)) {
-      const dirs = fs.readdirSync(pluginsDir);
-      for (const d of dirs) {
-        if (d.startsWith('crisp-') && d !== 'crisp-visual') {
-          const dataPath = path.join(pluginsDir, d, 'data.json');
-          if (fs.existsSync(dataPath)) {
-            const raw = fs.readFileSync(dataPath, 'utf-8');
-            const data = JSON.parse(raw);
-            if (data?.licenseCode && typeof data.licenseCode === 'string' && data.licenseCode.includes('.')) {
-              return data.licenseCode.trim();
-            }
-          }
+      for (const d of fs.readdirSync(pluginsDir)) {
+        if (!d.startsWith('crisp-') || d === 'crisp-visual') continue;
+        const dataPath = path.join(pluginsDir, d, 'data.json');
+        if (!fs.existsSync(dataPath)) continue;
+        try {
+          add(JSON.parse(fs.readFileSync(dataPath, 'utf-8'))?.licenseCode);
+        } catch (e) {
+          // 单个损坏的 data.json 不影响其余候选
         }
       }
     }
   } catch (e) {
     // Ignore discovery error
+  }
+  return candidates;
+}
+
+// 返回一张对本插件确实可用的授权码，找不到则返回 null。候选只做本地校验（不增加在线请求），
+// 因此一张作用域不含 Visual、已过期或签名无效的码不会再挡住后面可用的全家桶码。
+async function discoverVaultCrispLicense(app) {
+  for (const code of collectVaultCrispLicenseCandidates(app)) {
+    const local = await verifyLicenseCode(code, 'crisp-visual', app, window, { skipOnline: true });
+    if (local.valid) return code;
   }
   return null;
 }
@@ -236,7 +247,7 @@ class CrispVisualLicenseManager {
 
   async initialize() {
     const id = ++this.verificationId;
-    const code = this.plugin.settings?.licenseCode || discoverVaultCrispLicense(this.app) || "";
+    const code = this.plugin.settings?.licenseCode || (await discoverVaultCrispLicense(this.app)) || "";
     const result = await verifyLicenseCode(code, "crisp-visual", this.app, window, { skipOnline: true });
     if (id !== this.verificationId) return { valid: false, reason: "授权校验已被更新" };
     this.status = result;
@@ -264,7 +275,7 @@ class CrispVisualLicenseManager {
     const wasEntitled = this.isEntitled();
     let targetCode = (code || "").trim();
     if (!targetCode) {
-      const discovered = discoverVaultCrispLicense(this.app);
+      const discovered = await discoverVaultCrispLicense(this.app);
       if (discovered) targetCode = discovered;
     }
     const result = await verifyLicenseCode(targetCode, "crisp-visual", this.app);
