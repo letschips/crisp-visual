@@ -103,7 +103,8 @@ function collectVaultCrispLicenseCandidates(app) {
   }
   try {
     const basePath = app.vault?.adapter?.basePath || (app.vault?.adapter?.getBasePath ? app.vault.adapter.getBasePath() : '');
-    const pluginsDir = basePath ? path.join(basePath, '.obsidian', 'plugins') : '';
+    const configDir = app.vault?.configDir || ".obsidian";
+    const pluginsDir = basePath ? path.join(basePath, configDir, "plugins") : "";
     if (pluginsDir && fs.existsSync(pluginsDir)) {
       for (const d of fs.readdirSync(pluginsDir)) {
         if (!d.startsWith('crisp-') || d === 'crisp-visual') continue;
@@ -564,7 +565,7 @@ function getOcrBinaryPath(app) {
   try {
     const basePath = app?.vault?.adapter?.basePath || (app?.vault?.adapter?.getBasePath ? app.vault.adapter.getBasePath() : '');
     if (basePath) {
-      const p = path.join(basePath, '.obsidian', 'plugins', 'crisp-visual', 'vision_ocr');
+      const p = path.join(basePath, app.vault.configDir || '.obsidian', 'plugins', 'crisp-visual', 'vision_ocr');
       if (fs.existsSync(p)) return p;
     }
   } catch (e) {}

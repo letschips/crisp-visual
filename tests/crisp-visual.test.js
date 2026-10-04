@@ -481,3 +481,23 @@ test('refreshOpenViews triggers refresh and watcher.start on open views', () => 
   assert.equal(watcherStarted, true);
 });
 
+
+test('OCR binary is found under the vault custom config directory, not the default one', () => {
+  const { __getOcrBinaryPath } = loadPlugin('module.exports.__getOcrBinaryPath = getOcrBinaryPath;');
+  const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'crisp-visual-ocr-'));
+  try {
+    const place = dir => {
+      const target = path.join(basePath, dir, 'plugins', 'crisp-visual', 'vision_ocr');
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, '');
+      return target;
+    };
+    const custom = place('.obsidian-work');
+    place('.obsidian');
+    assert.equal(__getOcrBinaryPath({ vault: { configDir: '.obsidian-work', adapter: { basePath } } }), custom);
+    assert.equal(__getOcrBinaryPath({ vault: { adapter: { getBasePath: () => basePath } } }),
+      path.join(basePath, '.obsidian', 'plugins', 'crisp-visual', 'vision_ocr'));
+  } finally {
+    fs.rmSync(basePath, { recursive: true, force: true });
+  }
+});
