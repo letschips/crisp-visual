@@ -234,7 +234,7 @@ test('drop-imported GIF keeps its thumbnail extension consistent with its bytes'
   const TestPlugin = loadPlugin('module.exports.__TestMediaScanner = MediaScanner;');
   const MediaScanner = TestPlugin.__TestMediaScanner;
   const mediaRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crisp-visual-ingest-'));
-  const scanner = new MediaScanner({ settings: { mediaRoot } });
+  const scanner = new MediaScanner({ settings: { mediaRoot }, licenseManager: { isEntitled: () => true } });
   const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
 
   try {

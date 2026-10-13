@@ -239,10 +239,17 @@ class CrispVisualLicenseManager {
   }
 
   isEntitled() {
+    if (this.status.valid && this.status.payload?.expiresAt) {
+      const expiresAt = new Date(this.status.payload.expiresAt).getTime();
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        this.status = { valid: false, reason: '授权已到期，请重新激活' };
+      }
+    }
     return this.status.valid === true;
   }
 
   getStatus() {
+    this.isEntitled();
     return this.status;
   }
 
@@ -267,6 +274,8 @@ class CrispVisualLicenseManager {
 
   renderLicenseState() {
     for (const leaf of this.app.workspace.getLeavesOfType(CRISP_VISUAL_VIEW_TYPE)) {
+      if (leaf.view.inspectorCleanup) leaf.view.inspectorCleanup();
+      if (leaf.view.items) leaf.view.applyFilters();
       leaf.view.render();
     }
   }
@@ -916,16 +925,23 @@ class MediaScanner {
 
           try {
             const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-            const files = fs.readdirSync(infoDir);
+            if (meta.isDeleted) continue;
+            const files = fs.readdirSync(infoDir, { withFileTypes: true })
+              .filter(f => f.isFile() && !f.name.startsWith('.') && f.name !== 'metadata.json')
+              .map(f => f.name);
             
             let mainFile = null;
             let thumbFile = null;
-            for (const f of files) {
-              if (f.startsWith('.')) continue;
-              if (f === 'metadata.json') continue;
-              if (f.includes('_thumbnail.')) thumbFile = path.join(infoDir, f);
-              else if (!mainFile) mainFile = path.join(infoDir, f);
-            }
+            const metadataExt = String(meta.ext || '').replace(/^\./, '').toLowerCase();
+            const expectedFile = `${meta.name}.${metadataExt}`;
+            const originals = files.filter(f => !path.basename(f, path.extname(f)).endsWith('_thumbnail'));
+            const selectedFile = originals.find(f => f === expectedFile)
+              || originals.find(f => metadataExt
+                ? path.extname(f).slice(1).toLowerCase() === metadataExt
+                : /\.(png|jpe?g|gif|svg|webp|bmp|tiff?|avif|heic|pdf|mp4|mov)$/i.test(f));
+            if (selectedFile) mainFile = path.join(infoDir, selectedFile);
+            const thumbnail = files.find(f => path.basename(f, path.extname(f)).endsWith('_thumbnail'));
+            if (thumbnail) thumbFile = path.join(infoDir, thumbnail);
 
             if (!mainFile) continue;
 
@@ -1004,6 +1020,10 @@ class MediaScanner {
 
     return new Promise((resolve) => {
       execFile(ocrBinary, [item.filePath], { timeout: 10000 }, (error, stdout) => {
+        if (!this.plugin.licenseManager?.isEntitled()) {
+          resolve(null);
+          return;
+        }
         if (error) {
           console.warn('[Crisp Visual] OCR error:', error);
           resolve(null);
@@ -1047,6 +1067,10 @@ class MediaScanner {
   }
 
   async ingestBuffer(buffer, name, folderId = null, ext = 'png') {
+    // Guard the write boundary too: entitlement can be revoked while clipboard reads are pending.
+    if (!this.plugin.licenseManager?.isEntitled()) {
+      throw new Error('请先激活 Crisp Visual 后再导入素材');
+    }
     const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
     const id = generateEagleId();
     const infoDir = path.join(rootPath, `${id}.info`);
@@ -1108,12 +1132,13 @@ class LibraryWatcher {
     const trigger = () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
+        this.debounceTimer = null;
         if (this.onChange) this.onChange();
       }, 400);
     };
 
     try {
-      const w1 = fs.watch(rootPath, { recursive: false }, () => trigger());
+      const w1 = fs.watch(rootPath, { recursive: true }, () => trigger());
       this.watchers.push(w1);
 
       const libRoot = path.resolve(rootPath, '..');
@@ -1288,14 +1313,16 @@ class CrispVisualView extends ItemView {
 
   applyFilters() {
     const isPro = this.plugin.licenseManager && this.plugin.licenseManager.isEntitled();
-    const result = this.items.filter(item => {
+    // Cap before filtering so search/folder changes cannot reveal the rest of the library.
+    const previewItems = isPro ? this.items : this.items.slice(0, 20);
+    const result = previewItems.filter(item => {
       // 1. Search Query Filter (Name + Tags + Folders + OCR Text + Annotation + Ext)
       if (this.searchQuery) {
         const q = this.searchQuery.toLowerCase().trim();
         const matchName = item.name.toLowerCase().includes(q);
         const matchTag = (item.tags || []).some(t => t.toLowerCase().includes(q));
         const matchFolder = (item.foldersNamed || []).some(f => f.toLowerCase().includes(q));
-        const matchAnnotation = (item.annotation || '').toLowerCase().includes(q);
+        const matchAnnotation = isPro && (item.annotation || '').toLowerCase().includes(q);
         const matchExt = (item.ext || '').toLowerCase() === q;
         const matchOcr = (isPro && (item.ocrText || '').toLowerCase().includes(q));
         if (!matchName && !matchTag && !matchFolder && !matchAnnotation && !matchExt && !matchOcr) return false;
@@ -1339,14 +1366,9 @@ class CrispVisualView extends ItemView {
       return true;
     });
 
-    this.totalFilteredCount = result.length;
-    if (!isPro && result.length > 20) {
-      this.filteredItems = result.slice(0, 20);
-      this.isFreeCapped = true;
-    } else {
-      this.filteredItems = result;
-      this.isFreeCapped = false;
-    }
+    this.totalFilteredCount = isPro ? result.length : this.items.length;
+    this.filteredItems = result;
+    this.isFreeCapped = !isPro && this.items.length > 20;
   }
 
   resetFilters() {
@@ -1819,11 +1841,15 @@ class CrispVisualView extends ItemView {
 
     this.filteredItems.forEach(item => {
       const card = masonry.createDiv({ cls: 'crisp-visual-card' });
-      card.setAttribute('draggable', 'true');
+      card.setAttribute('draggable', String(!!this.plugin.licenseManager?.isEntitled()));
 
       // Drag & Drop to Markdown Editor or Canvas
       card.addEventListener('dragstart', (e) => {
         const insertSyntax = this.generateInsertSyntax(item);
+        if (!insertSyntax) {
+          e.preventDefault();
+          return;
+        }
         e.dataTransfer.setData('text/plain', insertSyntax);
         e.dataTransfer.setData('text/uri-list', `file://${item.filePath}`);
         e.dataTransfer.effectAllowed = 'copy';
@@ -1871,6 +1897,7 @@ class CrispVisualView extends ItemView {
       const imgWrap = card.createDiv({ cls: 'crisp-visual-img-wrap' });
       const img = imgWrap.createEl('img', { cls: 'crisp-visual-img' });
       img.alt = item.name;
+      img.draggable = false;
       img.loading = 'lazy';
       img.decoding = 'async';
 
@@ -1917,11 +1944,16 @@ class CrispVisualView extends ItemView {
   }
 
   generateInsertSyntax(item) {
+    if (!this.plugin.licenseManager?.isEntitled()) {
+      new Notice('请先激活 Crisp Visual 后再插入、复制或拖拽素材');
+      return '';
+    }
     return buildInsertSyntax(item, this.plugin.settings.insertFormat);
   }
 
   insertToActiveNote(item) {
     const syntax = this.generateInsertSyntax(item);
+    if (!syntax) return;
     const activeLeaf = this.app.workspace.activeLeaf;
     if (activeLeaf && activeLeaf.view && activeLeaf.view.editor) {
       activeLeaf.view.editor.replaceSelection(`\n${syntax}\n`);
@@ -1972,7 +2004,9 @@ class CrispVisualView extends ItemView {
       .setTitle('复制 Markdown 可点击语法')
       .setIcon('link')
       .onClick(() => {
-        navigator.clipboard.writeText(this.generateInsertSyntax(item));
+        const syntax = this.generateInsertSyntax(item);
+        if (!syntax) return;
+        navigator.clipboard.writeText(syntax);
         new Notice('已复制 Markdown 语法！');
       })
     );
@@ -1981,6 +2015,7 @@ class CrispVisualView extends ItemView {
       .setTitle('复制 Eagle 协议链接')
       .setIcon('external-link')
       .onClick(() => {
+        if (!this.generateInsertSyntax(item)) return;
         navigator.clipboard.writeText(item.eagleUri);
         new Notice('已复制 Eagle URI！');
       })
@@ -2020,6 +2055,7 @@ class CrispVisualView extends ItemView {
     try {
       let added = false;
       await this.app.fileManager.processFrontMatter(activeFile, frontmatter => {
+        if (!this.plugin.licenseManager?.isEntitled()) throw new Error('授权已失效，未修改笔记');
         added = upsertEagleItem(frontmatter, item);
       });
 
@@ -2113,6 +2149,7 @@ class CrispVisualView extends ItemView {
       const imgPane = content.createDiv({ cls: 'crisp-visual-inspector-img-pane' });
       const img = imgPane.createEl('img');
       img.alt = item.name;
+      img.draggable = false;
       attachImageSrc(img, item.filePath, item.ext);
 
       // Right: Metadata & Actions
@@ -2166,7 +2203,9 @@ class CrispVisualView extends ItemView {
       const runOcrBtn = ocrLabelWrap.createEl('button', { cls: 'crisp-visual-ocr-btn', text: '识别/刷新' });
       
       const ocrVal = ocrRow.createDiv({ cls: 'crisp-visual-ocr-box' });
-      ocrVal.setText(item.ocrText || item.annotation || '（未识别，点击右上角识别）');
+      ocrVal.setText(this.plugin.licenseManager?.isEntitled()
+        ? (item.ocrText || item.annotation || '（未识别，点击右上角识别）')
+        : '激活后查看和提取 OCR 文案');
       
       runOcrBtn.addEventListener('click', async () => {
         if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
@@ -2505,7 +2544,7 @@ class CrispVisualPlugin extends Plugin {
     }
   }
   async onload() {
-    console.log('[Crisp Visual] Loading plugin v0.2.0...');
+    console.log(`[Crisp Visual] Loading plugin v${this.manifest.version}...`);
     await this.loadSettings();
 
     // Initialize License Manager & Auto-inherit from Crisp Suite
