@@ -1,4 +1,4 @@
-const { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, Setting, Menu, Modal, addIcon, requestUrl } = require('obsidian');
+const { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, Setting, Menu, Modal, addIcon, setIcon, requestUrl } = require('obsidian');
 
 // Obsidian's Plugin.loadData() returns null for a missing data.json but undefined when the file exists
 // and cannot be read or parsed (sync conflict, interrupted write), and Plugin.saveData() swallows write
@@ -2336,7 +2336,10 @@ class CrispVisualSettingTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Crisp Visual 设置' });
+    const brandHeader = containerEl.createDiv({ cls: 'crisp-brand-header' });
+    setIcon(brandHeader.createDiv({ cls: 'crisp-brand-logo' }), 'crisp-visual-icon');
+    brandHeader.createEl('h2', { text: 'Crisp Visual' });
+    containerEl.createEl('p', { text: '找图、看图，就在笔记旁', cls: 'crisp-brand-slogan' });
 
     // 1. Render About Card (Author & Info)
     renderAboutCard(containerEl);
