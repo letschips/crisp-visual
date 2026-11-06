@@ -18,13 +18,14 @@ const mod = new Module(source, module);
 mod.filename = source;
 mod.paths = Module._nodeModulePaths(path.dirname(source));
 try {
-  mod._compile(fs.readFileSync(source, 'utf8') + '\nmodule.exports.LibraryWatcher = LibraryWatcher;', source);
+  mod._compile(fs.readFileSync(source, 'utf8') + '\nmodule.exports.LibraryWatcher = LibraryWatcher; module.exports.entitleFixture = (p) => setVisualLicense(visualLicenseManagerFor(p), {valid:true,payload:{}});', source);
 } finally { Module._load = originalLoad; }
 const Plugin = mod.exports;
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-library-e2e-'));
 const root = path.join(temp, '中文 素材.library', 'images');
 fs.mkdirSync(root, { recursive: true });
 const plugin = { settings: { mediaRoot: root }, licenseManager: { isEntitled: () => true } };
+Plugin.entitleFixture(plugin);
 const scanner = new Plugin.classes.MediaScanner(plugin);
 const report = { source, fixture: temp, scenarios: [] };
 async function check(name, fn) {

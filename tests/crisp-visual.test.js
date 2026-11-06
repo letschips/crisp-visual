@@ -42,7 +42,9 @@ function loadPlugin(sourceSuffix = '') {
   }
 }
 
-const CrispVisualPlugin = loadPlugin();
+// Test-only hook into the module-private license state.
+const ENTITLE_SUFFIX = 'module.exports.__entitle = (target, on = true) => { const manager = visualLicenseManagerFor(target); setVisualLicense(manager, on ? { valid: true, payload: { product: "Crisp Suite", features: ["all"] } } : { valid: false }); return target; };';
+const CrispVisualPlugin = loadPlugin(ENTITLE_SUFFIX);
 
 test('opening the gallery uses the original right sidebar leaf', async () => {
   const calls = [];
@@ -231,10 +233,10 @@ test('closing a gallery view dismisses an open inspector', async () => {
 });
 
 test('drop-imported GIF keeps its thumbnail extension consistent with its bytes', async () => {
-  const TestPlugin = loadPlugin('module.exports.__TestMediaScanner = MediaScanner;');
+  const TestPlugin = loadPlugin(`module.exports.__TestMediaScanner = MediaScanner;\n${ENTITLE_SUFFIX}`);
   const MediaScanner = TestPlugin.__TestMediaScanner;
   const mediaRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crisp-visual-ingest-'));
-  const scanner = new MediaScanner({ settings: { mediaRoot }, licenseManager: { isEntitled: () => true } });
+  const scanner = new MediaScanner(TestPlugin.__entitle({ settings: { mediaRoot } }));
   const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
 
   try {
@@ -252,6 +254,7 @@ test('drop-imported GIF keeps its thumbnail extension consistent with its bytes'
 test('silent library refresh preserves the gallery scroll position', async () => {
   const { CrispVisualView } = CrispVisualPlugin.classes;
   const view = Object.create(CrispVisualView.prototype);
+  view.plugin = CrispVisualPlugin.__entitle({ settings: {} });
   view.galleryContainer = { scrollTop: 321 };
   view.scanner = { folders: [], async scan() { return []; } };
   view.expandedFolders = new Set();
@@ -441,6 +444,7 @@ test('MediaScanner ignores .DS_Store and hidden files in Eagle items', async () 
     const mockPlugin = {
       settings: { mediaRoot: imagesDir }
     };
+    CrispVisualPlugin.__entitle(mockPlugin);
     const scanner = new MediaScanner(mockPlugin);
     const items = await scanner.scan();
 
@@ -499,5 +503,48 @@ test('OCR binary is found under the vault custom config directory, not the defau
       path.join(basePath, '.obsidian', 'plugins', 'crisp-visual', 'vision_ocr'));
   } finally {
     fs.rmSync(basePath, { recursive: true, force: true });
+  }
+});
+
+test('0.3 unactivated gallery never scans the library and shows only the activation card', async () => {
+  const { CrispVisualView } = CrispVisualPlugin.classes;
+  const view = Object.create(CrispVisualView.prototype);
+  let scans = 0, locked = 0, rendered = 0;
+  view.plugin = { settings: {}, licenseManager: { isEntitled: () => true, status: { valid: true } }, isLicensed: () => true };
+  view.scanner = { folders: [], async scan() { scans += 1; return [{ id: 'a' }]; } };
+  view.expandedFolders = new Set();
+  view.applyFilters = () => {};
+  view.renderLocked = () => { locked += 1; };
+  const realRender = view.render;
+  await view.refresh();
+  assert.equal(scans, 0);
+  assert.equal(locked, 1);
+  assert.deepEqual(view.items, []);
+  realRender.call(view);
+  assert.equal(locked, 2, 'render also falls back to the activation card');
+  CrispVisualPlugin.__entitle(view.plugin);
+  view.render = () => { rendered += 1; };
+  await view.refresh();
+  assert.equal(scans, 1);
+  assert.equal(rendered, 1);
+});
+
+test('0.3 status fields and prototype patches cannot unlock', () => {
+  const plugin = CrispVisualPlugin.__entitle({ settings: {} }, false);
+  const manager = plugin.licenseManager;
+  const CrispVisualLicenseManager = manager.constructor;
+  manager.status = { valid: true, payload: {} };
+  const original = CrispVisualLicenseManager.prototype.isEntitled;
+  CrispVisualLicenseManager.prototype.isEntitled = () => true;
+  try {
+    const { CrispVisualView } = CrispVisualPlugin.classes;
+    const view = Object.create(CrispVisualView.prototype);
+    view.plugin = plugin;
+    let locked = 0;
+    view.renderLocked = () => { locked += 1; };
+    view.render();
+    assert.equal(locked, 1);
+  } finally {
+    CrispVisualLicenseManager.prototype.isEntitled = original;
   }
 });

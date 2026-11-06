@@ -67,8 +67,29 @@ function getCryptoSubtle(windowObj = window) {
     : null;
 }
 
-async function importEd25519PublicKey(pem, windowObj = window) {
-  const subtle = getCryptoSubtle(windowObj);
+// WebCrypto is taken once at load: replacing crypto.subtle later does not reach the license check.
+const VISUAL_SUBTLE = (() => {
+  try {
+    const subtle = getCryptoSubtle(typeof window !== "undefined" ? window : globalThis) || globalThis.crypto?.subtle || null;
+    return subtle ? Object.freeze({ importKey: subtle.importKey.bind(subtle), verify: subtle.verify.bind(subtle) }) : null;
+  } catch (e) { return null; }
+})();
+let VISUAL_SUBTLE_CHECK = null;
+// A verifier that accepts an all-zero signature is not a real verifier; no license is trusted then.
+function visualSubtleTrusted() {
+  VISUAL_SUBTLE_CHECK ||= (async () => {
+    if (!VISUAL_SUBTLE) return false;
+    try {
+      const key = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM);
+      const accepted = await VISUAL_SUBTLE.verify("Ed25519", key, new Uint8Array(64), new TextEncoder().encode("crisp-visual/self-test"));
+      return accepted === false;
+    } catch (e) { return false; }
+  })();
+  return VISUAL_SUBTLE_CHECK;
+}
+
+async function importEd25519PublicKey(pem) {
+  const subtle = VISUAL_SUBTLE;
   if (!subtle) {
     throw new Error("当前 Obsidian 环境不支持 WebCrypto Ed25519");
   }
@@ -161,14 +182,15 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-visual", a
         return { valid: false, reason: `授权已于 ${String(payload.expiresAt).split("T")[0]} 到期` };
       }
     }
-    const publicKey = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM, windowObj);
-    const isValid = await getCryptoSubtle(windowObj).verify(
+    if (!(await visualSubtleTrusted())) return { valid: false, reason: "当前环境无法验证签名" };
+    const publicKey = await importEd25519PublicKey(CRISP_PUBLIC_KEY_PEM);
+    const isValid = await VISUAL_SUBTLE.verify(
       "Ed25519",
       publicKey,
       base64UrlToUint8Array(signatureBase64),
       new TextEncoder().encode(payloadBase64)
     );
-    if (!isValid) return { valid: false, reason: "授权签名无效" };
+    if (isValid !== true) return { valid: false, reason: "授权签名无效" };
     if (options.skipOnline) return { valid: true, payload, source: "offline" };
 
     try {
@@ -228,28 +250,78 @@ async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-visual", a
   }
 }
 
+// Entitlement lives in module-private maps; the manager's status is for display only, so
+// replacing fields or prototype methods cannot grant access.
+const VISUAL_LICENSE_STATE = new WeakMap();  // manager -> { expiry } when verified
+const VISUAL_LICENSE_TIMERS = new WeakMap();
+const VISUAL_LICENSE_OWNER = new WeakMap();  // plugin -> manager
+
+function visualManagerActive(manager) {
+  const state = manager ? VISUAL_LICENSE_STATE.get(manager) : null;
+  if (!state) return false;
+  if (state.expiry === null || state.expiry > Date.now()) return true;
+  VISUAL_LICENSE_STATE.delete(manager);
+  manager.status = { valid: false, reason: "授权已到期，请重新激活" };
+  return false;
+}
+
+function scheduleVisualExpiry(manager) {
+  clearTimeout(VISUAL_LICENSE_TIMERS.get(manager));
+  VISUAL_LICENSE_TIMERS.delete(manager);
+  const state = VISUAL_LICENSE_STATE.get(manager);
+  if (!state || state.expiry === null) return;
+  const timer = setTimeout(() => {
+    if (!visualManagerActive(manager)) manager.renderLicenseState();
+    else scheduleVisualExpiry(manager);
+  }, Math.min(0x7fffffff, Math.max(1, state.expiry - Date.now() + 10)));
+  timer?.unref?.();
+  VISUAL_LICENSE_TIMERS.set(manager, timer);
+}
+
+function setVisualLicense(manager, result) {
+  if (result?.valid === true) {
+    const time = result.payload?.expiresAt ? new Date(result.payload.expiresAt).getTime() : NaN;
+    VISUAL_LICENSE_STATE.set(manager, { expiry: Number.isFinite(time) ? time : null });
+  } else {
+    VISUAL_LICENSE_STATE.delete(manager);
+  }
+  scheduleVisualExpiry(manager);
+  // Display accessors must never influence the trusted verification result.
+  manager.status = { ...result };
+}
+
+/** The single gate every feature goes through. */
+function visualEntitled(plugin) {
+  if (!plugin || (typeof plugin !== "object" && typeof plugin !== "function")) return false;
+  return visualManagerActive(VISUAL_LICENSE_OWNER.get(plugin));
+}
+
+function visualLicenseManagerFor(plugin) {
+  let manager = VISUAL_LICENSE_OWNER.get(plugin);
+  if (!manager) {
+    manager = new CrispVisualLicenseManager(plugin.app, plugin);
+    VISUAL_LICENSE_OWNER.set(plugin, manager);
+  }
+  plugin.licenseManager = manager;
+  return manager;
+}
+
 class CrispVisualLicenseManager {
   constructor(app, plugin) {
     this.app = app;
     this.plugin = plugin;
     this.status = { valid: false, reason: "尚未验证" };
-    
+
     this.verificationId = 0;
     this.backgroundVerification = null;
   }
 
   isEntitled() {
-    if (this.status.valid && this.status.payload?.expiresAt) {
-      const expiresAt = new Date(this.status.payload.expiresAt).getTime();
-      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-        this.status = { valid: false, reason: '授权已到期，请重新激活' };
-      }
-    }
-    return this.status.valid === true;
+    return visualManagerActive(this);
   }
 
   getStatus() {
-    this.isEntitled();
+    visualManagerActive(this);
     return this.status;
   }
 
@@ -258,7 +330,7 @@ class CrispVisualLicenseManager {
     const code = this.plugin.settings?.licenseCode || (await discoverVaultCrispLicense(this.app)) || "";
     const result = await verifyLicenseCode(code, "crisp-visual", this.app, window, { skipOnline: true });
     if (id !== this.verificationId) return { valid: false, reason: "授权校验已被更新" };
-    this.status = result;
+    setVisualLicense(this, result);
     if (result.valid) {
       this.plugin.settings.licenseCode = code;
       this.backgroundVerification = this.verify(code);
@@ -268,13 +340,17 @@ class CrispVisualLicenseManager {
 
   clear() {
     ++this.verificationId;
-    this.status = { valid: false, reason: "已手动清除激活" };
+    setVisualLicense(this, { valid: false, reason: "已手动清除激活" });
     this.renderLicenseState();
   }
 
   renderLicenseState() {
     for (const leaf of this.app.workspace.getLeavesOfType(CRISP_VISUAL_VIEW_TYPE)) {
       if (leaf.view.inspectorCleanup) leaf.view.inspectorCleanup();
+      if (visualManagerActive(this)) {
+        void leaf.view.refresh?.();
+        continue;
+      }
       if (leaf.view.items) leaf.view.applyFilters();
       leaf.view.render();
     }
@@ -282,7 +358,7 @@ class CrispVisualLicenseManager {
 
   async verify(code = this.plugin.settings?.licenseCode) {
     const id = ++this.verificationId;
-    const wasEntitled = this.isEntitled();
+    const wasEntitled = visualManagerActive(this);
     let targetCode = (code || "").trim();
     if (!targetCode) {
       const discovered = await discoverVaultCrispLicense(this.app);
@@ -290,8 +366,8 @@ class CrispVisualLicenseManager {
     }
     const result = await verifyLicenseCode(targetCode, "crisp-visual", this.app);
     if (id !== this.verificationId) return { valid: false, reason: "授权校验已被更新" };
-    this.status = result;
-    if (wasEntitled && !result.valid) this.renderLicenseState();
+    setVisualLicense(this, result);
+    if (wasEntitled !== visualManagerActive(this)) this.renderLicenseState();
     if (result.valid) {
       this.plugin.settings.licenseCode = targetCode;
       if (result.source === "online") {
@@ -863,6 +939,7 @@ class MediaScanner {
   }
 
   async scan() {
+    if (!visualEntitled(this.plugin)) return [];
     const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
     this.items = [];
     this.folders = [];
@@ -1008,7 +1085,7 @@ class MediaScanner {
   }
 
   async runOCR(item) {
-    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       return null;
     }
 
@@ -1020,7 +1097,7 @@ class MediaScanner {
 
     return new Promise((resolve) => {
       execFile(ocrBinary, [item.filePath], { timeout: 10000 }, (error, stdout) => {
-        if (!this.plugin.licenseManager?.isEntitled()) {
+        if (!visualEntitled(this.plugin)) {
           resolve(null);
           return;
         }
@@ -1050,7 +1127,7 @@ class MediaScanner {
   }
 
   async updateItemStar(item, star) {
-    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       return false;
     }
     try {
@@ -1068,7 +1145,7 @@ class MediaScanner {
 
   async ingestBuffer(buffer, name, folderId = null, ext = 'png') {
     // Guard the write boundary too: entitlement can be revoked while clipboard reads are pending.
-    if (!this.plugin.licenseManager?.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       throw new Error('请先激活 Crisp Visual 后再导入素材');
     }
     const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
@@ -1126,6 +1203,7 @@ class LibraryWatcher {
 
   start() {
     this.stop();
+    if (!visualEntitled(this.plugin)) return;
     const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
     if (!fs.existsSync(rootPath)) return;
 
@@ -1205,7 +1283,6 @@ class CrispVisualView extends ItemView {
 
   async onOpen() {
     await this.refresh();
-    this.watcher.start();
 
     // Listen for clipboard paste on container
     this.pasteHandler = (e) => this.handlePaste(e);
@@ -1233,7 +1310,7 @@ class CrispVisualView extends ItemView {
   }
 
   async handlePaste(e) {
-    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       new Notice('🔒 剪贴板秒存入库为 Crisp Pro 专业版功能');
       new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
       return;
@@ -1266,7 +1343,7 @@ class CrispVisualView extends ItemView {
 
   async handleDrop(e) {
     e.preventDefault();
-    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       new Notice('🔒 拖拽快速存图为 Crisp Pro 专业版功能');
       new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
       return;
@@ -1291,10 +1368,21 @@ class CrispVisualView extends ItemView {
   }
 
   async refresh(isSilent = false) {
+    if (!visualEntitled(this.plugin)) {
+      // 未激活不读素材库，只显示激活卡片
+      this.items = [];
+      this.applyFilters();
+      this.watcher?.stop();
+      this.renderLocked();
+      return;
+    }
     const previousScrollTop = isSilent && this.galleryContainer
       ? this.galleryContainer.scrollTop
       : 0;
-    this.items = await this.scanner.scan();
+    const scanned = await this.scanner.scan();
+    if (!visualEntitled(this.plugin)) return this.refresh();
+    this.items = scanned;
+    this.watcher?.start();
     if (this.scanner.folders) {
       for (const f of this.scanner.folders) {
         if (f.children && f.children.length > 0) {
@@ -1312,9 +1400,9 @@ class CrispVisualView extends ItemView {
   }
 
   applyFilters() {
-    const isPro = this.plugin.licenseManager && this.plugin.licenseManager.isEntitled();
-    // Cap before filtering so search/folder changes cannot reveal the rest of the library.
-    const previewItems = isPro ? this.items : this.items.slice(0, 20);
+    const isPro = visualEntitled(this.plugin);
+    // Unverified views cannot expose even previously cached assets.
+    const previewItems = isPro ? this.items : [];
     const result = previewItems.filter(item => {
       // 1. Search Query Filter (Name + Tags + Folders + OCR Text + Annotation + Ext)
       if (this.searchQuery) {
@@ -1366,9 +1454,9 @@ class CrispVisualView extends ItemView {
       return true;
     });
 
-    this.totalFilteredCount = isPro ? result.length : this.items.length;
+    this.totalFilteredCount = result.length;
     this.filteredItems = result;
-    this.isFreeCapped = !isPro && this.items.length > 20;
+    this.isFreeCapped = false;
   }
 
   resetFilters() {
@@ -1411,7 +1499,30 @@ class CrispVisualView extends ItemView {
     });
   }
 
+  renderLocked() {
+    this.watcher?.stop();
+    this.items = [];
+    this.filteredItems = [];
+    this.totalFilteredCount = 0;
+    this.inspectorCleanup?.();
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass('crisp-visual-container');
+    const card = container.createDiv({ cls: 'crisp-visual-locked' });
+    card.innerHTML = CRISP_VISUAL_SVG;
+    card.createEl('h3', { text: 'Crisp Visual 未激活' });
+    card.createEl('p', { text: '激活后可以浏览、搜索和导入素材。素材文件仍在你的素材库里，不受影响。' });
+    const button = card.createEl('button', { text: '输入授权码', cls: 'mod-cta' });
+    button.addEventListener('click', () => {
+      new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
+    });
+  }
+
   render() {
+    if (!visualEntitled(this.plugin)) {
+      this.renderLocked();
+      return;
+    }
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass('crisp-visual-container');
@@ -1452,7 +1563,7 @@ class CrispVisualView extends ItemView {
     // Right Header Controls
     const rightHeader = header.createDiv({ cls: 'crisp-visual-header-right' });
 
-    const isPro = this.plugin.licenseManager && this.plugin.licenseManager.isEntitled();
+    const isPro = visualEntitled(this.plugin);
     if (!isPro) {
       const proPill = rightHeader.createEl('button', {
         cls: 'crisp-visual-btn crisp-visual-btn-pro',
@@ -1773,6 +1884,7 @@ class CrispVisualView extends ItemView {
   }
 
   renderGalleryOnly() {
+    if (!visualEntitled(this.plugin)) return this.renderLocked();
     if (this.galleryContainer) {
       this.galleryContainer.empty();
       this.renderMasonry();
@@ -1780,6 +1892,7 @@ class CrispVisualView extends ItemView {
   }
 
   renderMasonry() {
+    if (!visualEntitled(this.plugin)) return this.renderLocked();
     const rootPath = normalizeEaglePath(this.plugin.settings.mediaRoot || '');
     if (!rootPath || !fs.existsSync(rootPath)) {
       const empty = this.galleryContainer.createDiv({ cls: 'crisp-visual-empty-state' });
@@ -1841,7 +1954,7 @@ class CrispVisualView extends ItemView {
 
     this.filteredItems.forEach(item => {
       const card = masonry.createDiv({ cls: 'crisp-visual-card' });
-      card.setAttribute('draggable', String(!!this.plugin.licenseManager?.isEntitled()));
+      card.setAttribute('draggable', String(visualEntitled(this.plugin)));
 
       // Drag & Drop to Markdown Editor or Canvas
       card.addEventListener('dragstart', (e) => {
@@ -1944,7 +2057,7 @@ class CrispVisualView extends ItemView {
   }
 
   generateInsertSyntax(item) {
-    if (!this.plugin.licenseManager?.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       new Notice('请先激活 Crisp Visual 后再插入、复制或拖拽素材');
       return '';
     }
@@ -1983,7 +2096,7 @@ class CrispVisualView extends ItemView {
       .setTitle('提取/刷新本地 OCR 文案')
       .setIcon('scan-text')
       .onClick(async () => {
-        if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+        if (!visualEntitled(this.plugin)) {
           new Notice('🔒 本地 Vision OCR 识别为 Crisp Pro 专业版功能');
           new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
           return;
@@ -2040,7 +2153,7 @@ class CrispVisualView extends ItemView {
   }
 
   async bindToActiveTopic(item) {
-    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       new Notice('🔒 选题双向绑定为 Crisp Pro 专业版功能');
       new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
       return;
@@ -2055,7 +2168,7 @@ class CrispVisualView extends ItemView {
     try {
       let added = false;
       await this.app.fileManager.processFrontMatter(activeFile, frontmatter => {
-        if (!this.plugin.licenseManager?.isEntitled()) throw new Error('授权已失效，未修改笔记');
+        if (!visualEntitled(this.plugin)) throw new Error('授权已失效，未修改笔记');
         added = upsertEagleItem(frontmatter, item);
       });
 
@@ -2070,7 +2183,7 @@ class CrispVisualView extends ItemView {
   }
 
   async createRawCard(item) {
-    if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+    if (!visualEntitled(this.plugin)) {
       new Notice('🔒 ANKS 认知卡片生成为 Crisp Pro 专业版功能');
       new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
       return;
@@ -2094,6 +2207,7 @@ class CrispVisualView extends ItemView {
   }
 
   openInspector(initialItem) {
+    if (!visualEntitled(this.plugin)) return;
     if (this.inspectorCleanup) {
       this.inspectorCleanup();
     }
@@ -2179,7 +2293,7 @@ class CrispVisualView extends ItemView {
         });
         s.innerHTML = `<svg viewBox="0 0 24 24" class="crisp-visual-star-svg"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>`;
         s.addEventListener('click', async () => {
-          if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+          if (!visualEntitled(this.plugin)) {
             new Notice('🔒 星级评分修改与持久化为 Crisp Pro 专业版功能');
             new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
             return;
@@ -2203,12 +2317,12 @@ class CrispVisualView extends ItemView {
       const runOcrBtn = ocrLabelWrap.createEl('button', { cls: 'crisp-visual-ocr-btn', text: '识别/刷新' });
       
       const ocrVal = ocrRow.createDiv({ cls: 'crisp-visual-ocr-box' });
-      ocrVal.setText(this.plugin.licenseManager?.isEntitled()
+      ocrVal.setText(visualEntitled(this.plugin)
         ? (item.ocrText || item.annotation || '（未识别，点击右上角识别）')
         : '激活后查看和提取 OCR 文案');
       
       runOcrBtn.addEventListener('click', async () => {
-        if (!this.plugin.licenseManager || !this.plugin.licenseManager.isEntitled()) {
+        if (!visualEntitled(this.plugin)) {
           new Notice('🔒 本地 Vision OCR 识别为 Crisp Pro 专业版功能');
           new CrispVisualActivationModal(this.app, this.plugin, () => this.refresh()).open();
           return;
@@ -2551,8 +2665,7 @@ class CrispVisualPlugin extends Plugin {
     await this.loadSettings();
 
     // Initialize License Manager & Auto-inherit from Crisp Suite
-    this.licenseManager = new CrispVisualLicenseManager(this.app, this);
-    await this.licenseManager.initialize();
+    await visualLicenseManagerFor(this).initialize();
 
     try {
       addIcon('crisp-visual-icon', CRISP_VISUAL_SVG);
@@ -2600,6 +2713,7 @@ class CrispVisualPlugin extends Plugin {
   }
 
   onunload() {
+    clearTimeout(VISUAL_LICENSE_TIMERS.get(VISUAL_LICENSE_OWNER.get(this)));
     console.log('[Crisp Visual] Unloading plugin.');
   }
 

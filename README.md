@@ -66,7 +66,7 @@ Part of the **Crisp Series** for Obsidian by [letschips](https://github.com/lets
 
 ## Activation and Preview
 
-Without a valid activation, the gallery provides a read-only preview of the first 20 assets. Search and folder filters apply only within this preview. Import, note insertion, drag export, link copying, OCR, rating changes, topic binding, and RAW-card creation require activation.
+Without a valid activation, the gallery shows only an activation card and does not scan or watch the asset library. Browsing, search, import, note insertion, drag export, link copying, OCR, rating changes, topic binding, and RAW-card creation require activation.
 
 Valid signed licenses retain offline fallback. Server-side revocation and device limits cannot be checked while offline.
 
