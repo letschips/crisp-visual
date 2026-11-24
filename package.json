@@ -1,15 +1,15 @@
 {
   "name": "obsidian-crisp-visual",
-  "version": "0.2.12",
+  "version": "0.3.0",
   "description": "High-performance Apple-aesthetic visual asset gallery, Eagle library integration, color palette filtering, Vision OCR, and seamless drag-and-drop linking for Obsidian.",
   "main": "main.js",
   "scripts": {
-    "test:e2e:license-hardening": "node tests/license-hardening.e2e.cjs",
-    "check": "node --check main.js && npm test",
-    "test": "node --test tests/crisp-visual.test.js tests/license-inherit.test.js && node --test tests/license-http.cjs",
-    "test:e2e:license-config": "node tests/config-dir.e2e.cjs",
-    "test:e2e:library": "node tests/library.e2e.cjs",
-    "test:e2e:license-gates": "node tests/license-gates.e2e.cjs"
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "test": "node --test tests/*.test.js && node --test tests/license-http.cjs",
+    "check": "npm run build && npm test && node tests/library.e2e.cjs && node tests/license-hardening.e2e.cjs && node tests/config-dir.e2e.cjs && node tests/license-gates.e2e.cjs",
+    "deploy": "node scripts/deploy.mjs",
+    "build:ocr": "sh native/build.sh"
   },
   "keywords": [
     "obsidian",
@@ -24,5 +24,8 @@
   "author": "letschips",
   "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/letschips/crisp-visual",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
 }

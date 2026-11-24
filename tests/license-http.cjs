@@ -65,7 +65,7 @@ function loadVerifier(scenario) {
     },
     createManager(code, onLost = () => {}) {
       const settings = { licenseCode: code };
-      const app = { workspace: { getLeavesOfType: () => [{ view: { render: onLost } }] } };
+      const app = { workspace: { getLeavesOfType: () => [{ view: { onLicenseChange: onLost } }] } };
       return pluginId === 'crisp-visual'
         ? new context.httpTestManager(app, { settings, saveSettings: async () => {} })
         : new context.httpTestManager(app, settings, { onEntitlementLost: onLost });

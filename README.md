@@ -8,16 +8,16 @@ Part of the **Crisp Series** for Obsidian by [letschips](https://github.com/lets
 
 ## ✨ Features
 
-- 🖼️ **Apple-Aesthetic Masonry Gallery**: High-performance multi-column image and GIF gallery with fluid hover animations, resolution badges, and smooth dark/light theme support.
+- 🖼️ **Masonry Gallery**: Thumbnails stream straight from disk and render in batches, so large libraries stay responsive. Newest items fill the first row; three densities.
 - 🦅 **Native Eagle Library Integration**: Directly mounts your local Eagle library (`.library/images`), automatically reading folders hierarchy, color palettes, tags, and ratings without bloating your iCloud vault.
-- 🔍 **Local Offline macOS Vision OCR**: High-speed offline Chinese and English text extraction powered by Apple native Vision framework (`VNRecognizeTextRequest`), enabling instantaneous ad-hoc search indexing across all visual assets.
-- ⚡ **Instant Clipboard & Drop Capture**: Press `Cmd + V` in the gallery to instantly save screenshots or copied images into your library with automatic dimensions detection and Eagle ID assignment.
-- 🎨 **Color & Multi-Dimensional Filtering**: Filter by dominant color groups (Red, Orange, Yellow, Green, Blue, Purple, Dark), aspect ratios (16:9, 3:4, 1:1, Banner), file format, and star ratings.
+- 🔍 **Local Offline macOS Vision OCR**: Offline Chinese and English text recognition with Apple's Vision framework. The helper ships inside `main.js` (universal binary), so BRAT and manual installs get it too. Recognized text becomes searchable.
+- ⚡ **Clipboard & Drop Capture**: Paste (`Cmd + V`) or drop images into the gallery to add them to your Eagle library. The real image format and size are read from the file.
+- 🎨 **Filter Panel**: Filter by dominant color, aspect ratio, star rating and file format from one panel.
 - 🏁 **Grayscale Inspiration Mode**: One-click monochrome toggle to strip away color and focus strictly on layout composition, typographic hierarchy, and value contrast.
 - 🏷️ **Dynamic Sidebar Tag Navigator**: Aggregates all tags across your asset library for fast one-click filtering.
-- 🔬 **Inspector Modal with Keyboard Roaming**: Press `←` and `→` arrow keys to seamlessly navigate through your library, `Escape` to close, click color swatches to instantly copy HEX codes, and adjust star ratings on the fly.
-- 📝 **Bidirectional Markdown & Note Binding**: Drag and drop images directly into notes, insert with customizable Markdown syntax, or bind visual assets to active topic notes.
-- 💎 **ANKS RAW Knowledge Cards**: Generate structured `RAW-YYYYMMDD-<id>.md` insight cards with reciprocal Eagle URI links for downstream knowledge distillation.
+- 🔬 **Inspector**: Press `←` / `→` to move through the current results, `Esc` to close. Click a color swatch to copy its HEX code; set star ratings in place.
+- 📝 **Notes**: Drag images into notes, or insert them at the cursor of the note you used last. Assets can also be recorded in a note's `eagle` property.
+- 💎 **ANKS RAW Cards (optional)**: In vaults that use ANKS (`Topics/self-media/raw/inbox` exists), generate `RAW-YYYYMMDD-<id>.md` cards linked back to Eagle. Other vaults never see this option.
 
 ---
 
@@ -59,7 +59,7 @@ Part of the **Crisp Series** for Obsidian by [letschips](https://github.com/lets
 | Setting | Description | Default |
 | :--- | :--- | :--- |
 | **Media Root Path** | Path to your Eagle library `images` folder | Auto-detected |
-| **Insert Format** | Default syntax when inserting images: `Clickable Markdown` / `Standard Markdown` / `Raw URI Link` | `Clickable Markdown` |
+| **Insert Format** | Image that opens Eagle when clicked / plain image / link to Eagle | Image that opens Eagle |
 | **Software License** | Single key activates all Crisp plugins (Crisp Suite / Crisp Visual) | Auto-discovered from suite |
 
 ---
@@ -69,6 +69,17 @@ Part of the **Crisp Series** for Obsidian by [letschips](https://github.com/lets
 Without a valid activation, the gallery shows only an activation card and does not scan or watch the asset library. Browsing, search, import, note insertion, drag export, link copying, OCR, rating changes, topic binding, and RAW-card creation require activation.
 
 Valid signed licenses retain offline fallback. Server-side revocation and device limits cannot be checked while offline.
+
+## 🛠 Development
+
+Source lives in `src/`; `main.js` is generated.
+
+```bash
+npm install
+npm run build      # src/ -> main.js (embeds native/vision_ocr)
+npm run check      # build, unit tests, license tests, library e2e
+npm run build:ocr  # rebuild native/vision_ocr (universal) after editing the Swift source
+```
 
 ## 🔒 Privacy & Software Policy
 

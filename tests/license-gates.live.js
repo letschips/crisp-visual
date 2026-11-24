@@ -12,13 +12,13 @@
   const obsidian=require('obsidian');
   new Function('require','module','exports',source+'\nmodule.exports.fixtureManager=visualLicenseManagerFor;')(name=>name==='obsidian'?{...obsidian,requestUrl:async()=>({status:200,json:{valid:true}})}:require(name),module,module.exports);
   const Plugin=module.exports;
-  const fakeApp={appId:'LOCAL-LIVE-TEST',workspace:{getLeavesOfType:()=>[],activeLeaf:{view:{editor:{replaceSelection(){editorWrites++;}}}}}};
+  const fakeApp={appId:'LOCAL-LIVE-TEST',vault:{getAbstractFileByPath:()=>null},workspace:{getLeavesOfType:()=>[],iterateAllLeaves(){},activeEditor:{editor:{replaceSelection(){editorWrites++;}},file:null}}};
   const plugin={app:fakeApp,settings:{mediaRoot:root,insertFormat:'standard_markdown'},saveSettings:async()=>{}};
   const manager=Plugin.fixtureManager(plugin);
   let editorWrites=0,scans=0;
   const view=Object.create(Plugin.classes.CrispVisualView.prototype);
-  const container=document.createElement('div');container.append(document.createElement('div'),document.createElement('div'));
-  Object.assign(view,{plugin,items:[],searchQuery:'',selectedColor:'all',selectedFormat:'all',selectedRatio:'all',selectedStar:'all',selectedFolderId:'all',selectedTag:null,densityMode:'standard',expandedFolders:new Set(),containerEl:container,galleryContainer:document.createElement('div')});
+  const container=document.createElement('div');const content=container.createDiv();
+  Object.assign(view,{plugin,items:[],visibleItems:[],filters:Plugin.logic.emptyFilters(),shuffled:null,density:'standard',expandedFolders:new Set(),containerEl:container,contentEl:content,galleryEl:content.createDiv(),inspector:null,grid:null});
   Object.defineProperty(view,'app',{value:fakeApp});
   const scanner=new Plugin.classes.MediaScanner(plugin);view.scanner=scanner;
   view.watcher={start(){},stop(){}};
@@ -32,32 +32,32 @@
   });
   await check('unactivated direct scanner and cached filters expose zero assets',async()=>{
     view.items=Array.from({length:25},(_,i)=>({...item,id:String(i),name:`asset-${i}`}));view.applyFilters();
-    return (await scanner.scan()).length===0&&view.filteredItems.length===0;
+    return (await scanner.scan()).length===0&&view.visibleItems.length===0;
   });
   await check('unactivated import and insertion perform zero writes',async()=>{
     try{await scanner.ingestBuffer(png,'blocked');}catch{}
-    view.insertToActiveNote(item);return editorWrites===0&&fs.readdirSync(root).length===0&&!view.generateInsertSyntax(item);
+    view.insertToNote(item);return editorWrites===0&&fs.readdirSync(root).length===0&&!view.insertSyntax(item);
   });
   await check('cached render and inspector cannot expose locked assets',()=>{
-    view.renderMasonry();view.openInspector({...item,ocrText:'PRIVATE_PROBE'});
-    return !container.querySelector('.crisp-visual-card')&&!document.querySelector('.crisp-visual-inspector-overlay');
+    view.renderGallery();view.openInspector({...item,ocrText:'PRIVATE_PROBE'});
+    return !container.querySelector('.crisp-visual-card')&&!document.querySelector('.modal.crisp-visual-inspector')&&!view.inspector;
   });
   await check('display and method replacements cannot unlock',async()=>{
     manager.status={valid:true,payload:{}};manager.isEntitled=()=>true;
     plugin.licenseVerifier=async()=>({valid:true});await manager.verify('invalid');
-    view.items=[item];view.applyFilters();return view.filteredItems.length===0;
+    view.items=[item];view.applyFilters();return view.visibleItems.length===0;
   });
   await check('real signed activation restores import insertion and full search',async()=>{
     const payload=Buffer.from(JSON.stringify({product:'Crisp Suite',features:['all'],expiresAt:'2999-01-01T00:00:00Z'})).toString('base64url');
     await manager.verify(payload+'.'+sign(null,Buffer.from(payload),pair.privateKey).toString('base64url'));
-    const asset=await scanner.ingestBuffer(png,'allowed');view.insertToActiveNote(item);
-    view.items=Array.from({length:25},(_,i)=>({...item,id:String(i),name:`asset-${i}`}));view.searchQuery='asset-24';view.applyFilters();
-    return fs.existsSync(asset.mainFile)&&editorWrites===1&&view.filteredItems[0]?.id==='24';
+    const asset=await scanner.ingestBuffer(png,'allowed');view.insertToNote(item);
+    view.items=Array.from({length:25},(_,i)=>({...item,id:String(i),name:`asset-${i}`}));view.filters.query='asset-24';view.applyFilters();
+    return fs.existsSync(asset.mainFile)&&editorWrites===1&&view.visibleItems[0]?.id==='24';
   });
   await check('revocation blocks writes clears caches and restores activation card',async()=>{
     await manager.verify('invalid');await view.refresh();const before=fs.readdirSync(root).length;
-    try{await scanner.ingestBuffer(png,'revoked');}catch{}view.insertToActiveNote(item);
-    return editorWrites===1&&fs.readdirSync(root).length===before&&view.items.length===0&&view.filteredItems.length===0&&!!container.querySelector('.crisp-visual-locked');
+    try{await scanner.ingestBuffer(png,'revoked');}catch{}view.insertToNote(item);
+    return editorWrites===1&&fs.readdirSync(root).length===before&&view.items.length===0&&view.visibleItems.length===0&&!!container.querySelector('.crisp-visual-locked');
   });
   await view.onClose();
   const report={host:'Live Obsidian Electron',artifactSha256:createHash('sha256').update(original).digest('hex'),fixture:root,results,passed:results.every(r=>r.passed)};
