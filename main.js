@@ -1110,6 +1110,7 @@ var MediaScanner = class {
       console.warn("[Crisp Visual] Could not save OCR text:", e);
     }
     item.ocrText = text;
+    item.searchText = buildSearchText(item);
     return text;
   }
   async updateItemStar(item, star) {
@@ -1606,6 +1607,7 @@ var MasonryGrid = class {
     this.width = width;
     const count = columnCountFor(width, this.density);
     this.root?.remove();
+    this.sentinel?.remove();
     this.intersection?.disconnect();
     this.root = this.scrollEl.createDiv({ cls: `crisp-visual-masonry density-${this.density}` });
     this.columns = [];
@@ -1682,6 +1684,7 @@ var CrispVisualView = class extends import_obsidian4.ItemView {
     this.grid = null;
     this.searchTimer = null;
     this.loading = false;
+    this.closed = false;
   }
   getViewType() {
     return CRISP_VISUAL_VIEW_TYPE;
@@ -1693,6 +1696,7 @@ var CrispVisualView = class extends import_obsidian4.ItemView {
     return "crisp-visual-icon";
   }
   async onOpen() {
+    this.closed = false;
     this.contentEl.addClass("crisp-visual-container");
     this.pasteHandler = (e) => this.handlePaste(e);
     this.dragoverHandler = (e) => this.handleDragOver(e);
@@ -1705,6 +1709,7 @@ var CrispVisualView = class extends import_obsidian4.ItemView {
     await this.refresh();
   }
   async onClose() {
+    this.closed = true;
     this.watcher.stop();
     this.closeInspector();
     this.grid?.destroy();
@@ -1737,6 +1742,7 @@ var CrispVisualView = class extends import_obsidian4.ItemView {
   }
   // ---------- data ----------
   async refresh(silent = false) {
+    if (this.closed) return;
     if (!visualEntitled(this.plugin)) {
       this.watcher.stop();
       this.items = [];
@@ -1750,6 +1756,7 @@ var CrispVisualView = class extends import_obsidian4.ItemView {
     }
     const scanned = await this.scanner.scan();
     this.loading = false;
+    if (this.closed) return;
     if (!visualEntitled(this.plugin)) return this.refresh();
     this.items = scanned;
     this.counts = countLibrary(scanned);

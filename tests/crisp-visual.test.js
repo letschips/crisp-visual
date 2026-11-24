@@ -505,3 +505,95 @@ test('settings path status distinguishes missing, empty and connected libraries'
 test('external names and tags are escaped before reaching markup', () => {
   assert.equal(L.escapeHtml('<img src=x onerror="alert(1)"> & tag'), '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; tag');
 });
+
+test('masonry layout replaces the previous sentinel instead of leaking empty divs', () => {
+  const scroll = new FakeEl();
+  scroll.clientWidth = 3 * 200 + 2 * 12 + 24;
+  const grid = new MasonryGrid(scroll, (_item, column) => column.createDiv());
+  const items = Array.from({ length: 10 }, (_, i) => ({ id: i, width: 100, height: 100 }));
+  grid.setItems(items, { density: 'standard' });
+  grid.setItems(items, { density: 'compact' });
+  grid.setItems(items, { keep: true });
+  scroll.clientWidth = 2 * 200 + 12 + 24;
+  grid.onResize();
+  assert.equal(scroll.querySelectorAll('.crisp-visual-sentinel').length, 1);
+  grid.destroy();
+  assert.equal(scroll.querySelectorAll('.crisp-visual-sentinel').length, 0);
+});
+
+test('closing a gallery view while a scan is in flight does not restart the watcher or render', async () => {
+  const plugin = P.__entitle({ settings: {}, app: {} });
+  let resolveScan;
+  let watcherStarted = 0;
+  let rendered = 0;
+  const view = fakeView(plugin, {
+    scanner: {
+      folders: [],
+      folderMap: new Map(),
+      scan: () => new Promise(resolve => { resolveScan = resolve; })
+    },
+    watcher: { start() { watcherStarted += 1; }, stop() {} },
+    render() { rendered += 1; }
+  });
+  const pending = view.onOpen();
+  await Promise.resolve();
+  await view.onClose();
+  resolveScan([{ id: 'A', name: 'A', tags: [], folders: [], allFolderIds: new Set(), mtime: 1 }]);
+  await pending;
+  assert.equal(watcherStarted, 0);
+  assert.equal(rendered, 1, 'initial loading render happened before close, no post-close render');
+});
+
+test('runOCR refreshes item.searchText so recognized text is searchable immediately', { skip: process.platform !== 'darwin' }, async () => {
+  const lib = tempLibrary();
+  const ocrDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crisp-visual-ocr-run-'));
+  try {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="100"><rect width="360" height="100" fill="white"/><text x="24" y="68" font-family="Helvetica" font-size="48" fill="black">HELLO OCR</text></svg>';
+    writeItem(lib.images, 'OCR1', { name: 'poster', ext: 'svg' }, { 'poster.svg': Buffer.from(svg, 'utf8') });
+    const plugin = P.__entitle({
+      settings: { mediaRoot: lib.images },
+      manifest: { dir: '.' },
+      app: { vault: { configDir: '.', adapter: { basePath: ocrDir } } }
+    });
+    const scanner = new MediaScanner(plugin);
+    const [item] = await scanner.scan();
+    assert.equal(L.filterItems([item], { ...L.emptyFilters(), query: 'hello ocr' }).length, 0);
+    const recognized = await scanner.runOCR(item);
+    assert.match(recognized, /HELLO OCR/i);
+    assert.equal(L.filterItems([item], { ...L.emptyFilters(), query: 'hello ocr' }).length, 1);
+  } finally {
+    lib.cleanup();
+    fs.rmSync(ocrDir, { recursive: true, force: true });
+  }
+});
+
+test('unreadable data.json is backed up before defaults take over, and saveData is blocked when backup fails', async () => {
+  const files = new Map([['.obsidian/plugins/crisp-visual/data.json', '{corrupt']]);
+  const adapter = {
+    exists: async p => files.has(p),
+    read: async p => files.get(p),
+    write: async (p, content) => { files.set(p, content); }
+  };
+  const plugin = Object.create(P.prototype);
+  plugin.manifest = { dir: '.obsidian/plugins/crisp-visual' };
+  plugin.app = { vault: { adapter } };
+  await plugin.protectUnreadableData(undefined);
+  const backups = [...files.keys()].filter(k => k.includes('data.json.unreadable-'));
+  assert.equal(backups.length, 1);
+  assert.equal(files.get(backups[0]), '{corrupt');
+  assert.ok(!plugin.dataWriteBlocked);
+
+  const failingPlugin = Object.create(P.prototype);
+  failingPlugin.manifest = { dir: '.obsidian/plugins/crisp-visual' };
+  failingPlugin.app = { vault: { adapter: { exists: async () => true, read: async () => '{corrupt', write: async () => { throw new Error('disk full'); } } } };
+  let superWrites = 0;
+  P.__obsidian.Plugin.prototype.saveData = async () => { superWrites += 1; };
+  try {
+    await failingPlugin.protectUnreadableData(undefined);
+    assert.equal(failingPlugin.dataWriteBlocked, true);
+    await failingPlugin.saveData({ mediaRoot: '' });
+    assert.equal(superWrites, 0);
+  } finally {
+    delete P.__obsidian.Plugin.prototype.saveData;
+  }
+});

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { visualEntitled } from '../license.js';
-import { generateEagleId, resolveIngestFolders } from '../logic.js';
+import { buildSearchText, generateEagleId, resolveIngestFolders } from '../logic.js';
 import { getOcrBinaryPath, normalizeEaglePath } from './paths.js';
 import { buildItem, indexFolders, updateMetadata, writeJsonAtomic } from './eagle.js';
 import { getImageDimensionsFromBuffer, sniffImageExt } from './images.js';
@@ -136,6 +136,7 @@ export class MediaScanner {
       console.warn('[Crisp Visual] Could not save OCR text:', e);
     }
     item.ocrText = text;
+    item.searchText = buildSearchText(item);
     return text;
   }
 

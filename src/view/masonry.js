@@ -58,6 +58,7 @@ export class MasonryGrid {
     this.width = width;
     const count = columnCountFor(width, this.density);
     this.root?.remove();
+    this.sentinel?.remove();
     this.intersection?.disconnect();
     this.root = this.scrollEl.createDiv({ cls: `crisp-visual-masonry density-${this.density}` });
     this.columns = [];

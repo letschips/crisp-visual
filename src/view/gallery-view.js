@@ -54,6 +54,7 @@ export class CrispVisualView extends ItemView {
     this.grid = null;
     this.searchTimer = null;
     this.loading = false;
+    this.closed = false;
   }
 
   getViewType() { return CRISP_VISUAL_VIEW_TYPE; }
@@ -61,6 +62,7 @@ export class CrispVisualView extends ItemView {
   getIcon() { return 'crisp-visual-icon'; }
 
   async onOpen() {
+    this.closed = false;
     this.contentEl.addClass('crisp-visual-container');
     this.pasteHandler = e => this.handlePaste(e);
     this.dragoverHandler = e => this.handleDragOver(e);
@@ -74,6 +76,7 @@ export class CrispVisualView extends ItemView {
   }
 
   async onClose() {
+    this.closed = true;
     this.watcher.stop();
     this.closeInspector();
     this.grid?.destroy();
@@ -113,6 +116,7 @@ export class CrispVisualView extends ItemView {
   // ---------- data ----------
 
   async refresh(silent = false) {
+    if (this.closed) return;
     if (!visualEntitled(this.plugin)) {
       // 未激活不读素材库，只显示激活卡片
       this.watcher.stop();
@@ -127,6 +131,7 @@ export class CrispVisualView extends ItemView {
     }
     const scanned = await this.scanner.scan();
     this.loading = false;
+    if (this.closed) return;
     if (!visualEntitled(this.plugin)) return this.refresh();
     this.items = scanned;
     this.counts = countLibrary(scanned);
