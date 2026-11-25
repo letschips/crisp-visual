@@ -82,6 +82,17 @@ async function importEd25519PublicKey(pem) {
   );
 }
 
+/**
+ * Chat apps mangle long codes when they are copied: line breaks, spaces (incl. full-width/NBSP),
+ * zero-width characters, and surrounding text such as "卡密：…。". Returns the bare code.
+ */
+function normalizeLicenseCode(input) {
+  if (typeof input !== "string") return "";
+  const compact = input.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
+  const match = compact.match(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/);
+  return match ? match[0] : compact;
+}
+
 // 库内其它 Crisp 插件保存的授权码，按「已加载插件 → 磁盘 data.json」顺序去重收集。
 function collectVaultCrispLicenseCandidates(app) {
   if (!app) return [];
@@ -89,7 +100,7 @@ function collectVaultCrispLicenseCandidates(app) {
   const candidates = [];
   const add = (code) => {
     if (typeof code !== 'string') return;
-    const trimmed = code.trim();
+    const trimmed = normalizeLicenseCode(code);
     if (!trimmed.includes('.') || seen.has(trimmed)) return;
     seen.add(trimmed);
     candidates.push(trimmed);
@@ -130,7 +141,7 @@ async function discoverVaultCrispLicense(app) {
 }
 
 async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-visual", app = null, windowObj = window, options = {}) {
-  const trimmed = (licenseCode || "").trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (!trimmed) return { valid: false, reason: "授权码为空" };
   const parts = trimmed.split(".");
   if (parts.length !== 2) return { valid: false, reason: "授权码格式无效" };
@@ -302,7 +313,7 @@ class CrispVisualLicenseManager {
 
   async initialize() {
     const id = ++this.verificationId;
-    const code = this.plugin.settings?.licenseCode || (await discoverVaultCrispLicense(this.app)) || "";
+    const code = normalizeLicenseCode(this.plugin.settings?.licenseCode) || (await discoverVaultCrispLicense(this.app)) || "";
     const result = await verifyLicenseCode(code, "crisp-visual", this.app, window, { skipOnline: true });
     if (id !== this.verificationId) return { valid: false, reason: "授权校验已被更新" };
     setVisualLicense(this, result);
@@ -329,7 +340,7 @@ class CrispVisualLicenseManager {
   async verify(code = this.plugin.settings?.licenseCode) {
     const id = ++this.verificationId;
     const wasEntitled = visualManagerActive(this);
-    let targetCode = (code || "").trim();
+    let targetCode = normalizeLicenseCode(code);
     if (!targetCode) {
       const discovered = await discoverVaultCrispLicense(this.app);
       if (discovered) targetCode = discovered;
@@ -380,7 +391,7 @@ class CrispVisualActivationModal extends Modal {
 
     cancelBtn.addEventListener('click', () => this.close());
     activateBtn.addEventListener('click', async () => {
-      const code = input.value.trim();
+      const code = normalizeLicenseCode(input.value);
       if (!code) {
         new Notice('请输入有效的 Crisp 授权码');
         return;

@@ -157,13 +157,19 @@ async function importEd25519PublicKey(pem) {
     ["verify"]
   );
 }
+function normalizeLicenseCode(input) {
+  if (typeof input !== "string") return "";
+  const compact = input.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "");
+  const match = compact.match(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/);
+  return match ? match[0] : compact;
+}
 function collectVaultCrispLicenseCandidates(app) {
   if (!app) return [];
   const seen = /* @__PURE__ */ new Set();
   const candidates = [];
   const add = (code) => {
     if (typeof code !== "string") return;
-    const trimmed = code.trim();
+    const trimmed = normalizeLicenseCode(code);
     if (!trimmed.includes(".") || seen.has(trimmed)) return;
     seen.add(trimmed);
     candidates.push(trimmed);
@@ -198,7 +204,7 @@ async function discoverVaultCrispLicense(app) {
   return null;
 }
 async function verifyLicenseCode(licenseCode, targetPluginId = "crisp-visual", app = null, windowObj = window, options = {}) {
-  const trimmed = (licenseCode || "").trim();
+  const trimmed = normalizeLicenseCode(licenseCode);
   if (!trimmed) return { valid: false, reason: "\u6388\u6743\u7801\u4E3A\u7A7A" };
   const parts = trimmed.split(".");
   if (parts.length !== 2) return { valid: false, reason: "\u6388\u6743\u7801\u683C\u5F0F\u65E0\u6548" };
@@ -342,7 +348,7 @@ var CrispVisualLicenseManager = class {
   }
   async initialize() {
     const id = ++this.verificationId;
-    const code = this.plugin.settings?.licenseCode || await discoverVaultCrispLicense(this.app) || "";
+    const code = normalizeLicenseCode(this.plugin.settings?.licenseCode) || await discoverVaultCrispLicense(this.app) || "";
     const result = await verifyLicenseCode(code, "crisp-visual", this.app, window, { skipOnline: true });
     if (id !== this.verificationId) return { valid: false, reason: "\u6388\u6743\u6821\u9A8C\u5DF2\u88AB\u66F4\u65B0" };
     setVisualLicense(this, result);
@@ -365,7 +371,7 @@ var CrispVisualLicenseManager = class {
   async verify(code = this.plugin.settings?.licenseCode) {
     const id = ++this.verificationId;
     const wasEntitled = visualManagerActive(this);
-    let targetCode = (code || "").trim();
+    let targetCode = normalizeLicenseCode(code);
     if (!targetCode) {
       const discovered = await discoverVaultCrispLicense(this.app);
       if (discovered) targetCode = discovered;
@@ -410,7 +416,7 @@ var CrispVisualActivationModal = class extends import_obsidian.Modal {
     const cancelBtn = btnRow.createEl("button", { text: "\u53D6\u6D88" });
     cancelBtn.addEventListener("click", () => this.close());
     activateBtn.addEventListener("click", async () => {
-      const code = input.value.trim();
+      const code = normalizeLicenseCode(input.value);
       if (!code) {
         new import_obsidian.Notice("\u8BF7\u8F93\u5165\u6709\u6548\u7684 Crisp \u6388\u6743\u7801");
         return;
