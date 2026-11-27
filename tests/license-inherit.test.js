@@ -167,3 +167,11 @@ test("规范化：兄弟插件 data.json 里带空白的码也能被继承，并
   const app = makeVault(t, [["crisp-a", { licenseCode: `卡密：\n${good}\n` }]]);
   assert.equal(await lib.discoverVaultCrispLicense(app), good);
 });
+
+// Crisp Pulse keeps its code under `settings`; Tempo saves `licenseKey` at the top level.
+test("继承读得到 Pulse 嵌套在 settings 里的码和 Tempo 的 licenseKey", async (t) => {
+  const pulse = code(["all"], { licenseId: "PULSE" });
+  assert.equal(await lib.discoverVaultCrispLicense(makeVault(t, [["crisp-pulse", { settings: { licenseCode: pulse } }]])), pulse);
+  const tempo = code(["all"], { licenseId: "TEMPO" });
+  assert.equal(await lib.discoverVaultCrispLicense(makeVault(t, [["crisp-tempo", { licenseKey: tempo }]])), tempo);
+});

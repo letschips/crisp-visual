@@ -106,7 +106,10 @@ function collectVaultCrispLicenseCandidates(app) {
     candidates.push(trimmed);
   };
   for (const [pid, instance] of Object.entries(app.plugins?.plugins || {})) {
-    if (pid.startsWith('crisp-') && pid !== 'crisp-visual') add(instance?.settings?.licenseCode);
+    if (!pid.startsWith('crisp-') || pid === 'crisp-visual') continue;
+    add(instance?.settings?.licenseCode);
+    add(instance?.options?.licenseCode);
+    add(instance?.licenseKey);
   }
   try {
     const basePath = app.vault?.adapter?.basePath || (app.vault?.adapter?.getBasePath ? app.vault.adapter.getBasePath() : '');
@@ -118,7 +121,10 @@ function collectVaultCrispLicenseCandidates(app) {
         const dataPath = path.join(pluginsDir, d, 'data.json');
         if (!fs.existsSync(dataPath)) continue;
         try {
-          add(JSON.parse(fs.readFileSync(dataPath, 'utf-8'))?.licenseCode);
+          const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+          add(data?.licenseCode || data?.licenseKey || data?.license);
+          // Crisp Pulse keeps its settings nested under `settings`.
+          add(data?.settings?.licenseCode || data?.settings?.licenseKey);
         } catch (e) {
           // 单个损坏的 data.json 不影响其余候选
         }
